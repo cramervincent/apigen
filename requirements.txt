@@ -10,3 +10,5 @@ requests
 python-dotenv
 itsdangerous
 SQLAlchemy
+jinja2
+pydantic-settings
