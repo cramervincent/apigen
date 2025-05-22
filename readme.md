@@ -67,8 +67,8 @@ In je GCP-project, ga naar `API's & services` > `Bibliotheek`. Zoek deze twee op
 ### 3.1. Repo clonen (als je 'm van GitHub haalt)
 
 ```bash
-git clone <jouw-super-coole-repo-url>
-cd <mapnaam-van-je-repo>
+git clone https://github.com/cramervincent/apigen.git
+cd apigen
 ```
 
 ### 3.2. `.env` bestandje maken
@@ -202,8 +202,8 @@ Deze sectie beschrijft de algemene stappen om de applicatie op een Virtual Priva
 
 *  **Kloon de Repository**: Log in op je VPS (als je non-root gebruiker) en kloon je repository:
     ```bash
-    git clone <jouw-repository-url>
-    cd <jouw-repository-map> # bijv. apigen
+    git clone https://github.com/cramervincent/apigen.git
+    cd apigen
     ```
 *  **Virtuele Omgeving en Dependencies**:
     ```bash
@@ -318,4 +318,3 @@ Na deze stappen zou je applicatie bereikbaar moeten zijn via `https://jouwdomein
 
 ---
 
-Voel je vrij om deze `README.md` aan te passen en uit te breiden naar wens!
