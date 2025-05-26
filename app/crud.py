@@ -2,24 +2,38 @@
 import json
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import desc # Importeer desc voor sorteren
+from sqlalchemy import desc 
 from .database import BenchmarkReportDB
 
 def create_benchmark_report(
     db: Session, 
-    title: str, # NIEUW
-    property_ids: List[str],
+    title: str,
+    client_a_property_id: Optional[str], # NIEUW
+    benchmark_property_ids: Optional[List[str]], # NIEUW
     metrics_used: List[str],
     dimensions_used: List[str],
-    benchmark_results: Dict[str, Any],
+    benchmark_results_flat_json: List[Dict[str, Any]], # Verwacht nu de platte JSON structuur
     user_email: Optional[str]
 ) -> BenchmarkReportDB:
+    
+    benchmark_ids_json_str = json.dumps(benchmark_property_ids) if benchmark_property_ids else None
+    
+    # Voor compatibiliteit of logging, combineer alle gebruikte IDs (optioneel)
+    all_props = []
+    if client_a_property_id:
+        all_props.append(client_a_property_id)
+    if benchmark_property_ids:
+        all_props.extend(benchmark_property_ids)
+    legacy_property_ids_used = ",".join(all_props) if all_props else None
+
     db_report = BenchmarkReportDB(
-        title=title, # NIEUW
-        property_ids_used=",".join(property_ids),
+        title=title,
+        client_a_property_id=client_a_property_id, # NIEUW
+        benchmark_property_ids_json=benchmark_ids_json_str, # NIEUW
+        property_ids_used=legacy_property_ids_used, # Voor eventuele legacy/logging
         metrics_used=json.dumps(metrics_used),
         dimensions_used=json.dumps(dimensions_used),
-        benchmark_data_json=json.dumps(benchmark_results),
+        benchmark_data_json=json.dumps(benchmark_results_flat_json), # Sla de platte structuur op
         generated_by_email=user_email
     )
     db.add(db_report)
@@ -30,24 +44,23 @@ def create_benchmark_report(
 def get_benchmark_report_by_uuid(db: Session, report_uuid: str) -> Optional[BenchmarkReportDB]:
     return db.query(BenchmarkReportDB).filter(BenchmarkReportDB.report_uuid == report_uuid).first()
 
-# NIEUW: Haal alle benchmarks op voor een specifieke gebruiker
 def get_benchmark_reports_by_user_email(db: Session, user_email: str) -> List[BenchmarkReportDB]:
     return db.query(BenchmarkReportDB).filter(BenchmarkReportDB.generated_by_email == user_email).order_by(desc(BenchmarkReportDB.updated_at)).all()
 
-# NIEUW: Update een bestaande benchmark
 def update_benchmark_report(
     db: Session,
     report_uuid: str,
-    user_email: str, # Om eigendom te verifiëren
+    user_email: str,
     title: Optional[str] = None,
-    property_ids: Optional[List[str]] = None,
+    client_a_property_id: Optional[str] = None, # NIEUW
+    benchmark_property_ids: Optional[List[str]] = None, # NIEUW
     metrics_used: Optional[List[str]] = None,
     dimensions_used: Optional[List[str]] = None,
-    benchmark_results: Optional[Dict[str, Any]] = None # Dit zou opnieuw gegenereerd moeten worden als selecties wijzigen
+    benchmark_results_flat_json: Optional[List[Dict[str, Any]]] = None # Verwacht platte structuur
 ) -> Optional[BenchmarkReportDB]:
     db_report = db.query(BenchmarkReportDB).filter(
         BenchmarkReportDB.report_uuid == report_uuid,
-        BenchmarkReportDB.generated_by_email == user_email # Eigenaar check
+        BenchmarkReportDB.generated_by_email == user_email
     ).first()
 
     if not db_report:
@@ -55,25 +68,39 @@ def update_benchmark_report(
 
     if title is not None:
         db_report.title = title
-    if property_ids is not None:
-        db_report.property_ids_used = ",".join(property_ids)
+    
+    # Update nieuwe property velden
+    if client_a_property_id is not None: # Kan ook leeg zijn als het wordt verwijderd
+        db_report.client_a_property_id = client_a_property_id
+    if benchmark_property_ids is not None: # Kan ook een lege lijst zijn
+        db_report.benchmark_property_ids_json = json.dumps(benchmark_property_ids)
+
+    # Update legacy property_ids_used (optioneel, voor consistentie)
+    all_props_update = []
+    current_client_a = client_a_property_id if client_a_property_id is not None else db_report.client_a_property_id
+    current_benchmark_list = benchmark_property_ids if benchmark_property_ids is not None else (json.loads(db_report.benchmark_property_ids_json) if db_report.benchmark_property_ids_json else [])
+    
+    if current_client_a:
+        all_props_update.append(current_client_a)
+    if current_benchmark_list:
+        all_props_update.extend(current_benchmark_list)
+    db_report.property_ids_used = ",".join(all_props_update) if all_props_update else None
+        
     if metrics_used is not None:
         db_report.metrics_used = json.dumps(metrics_used)
     if dimensions_used is not None:
         db_report.dimensions_used = json.dumps(dimensions_used)
-    if benchmark_results is not None: # Als de data zelf ook geüpdatet wordt
-        db_report.benchmark_data_json = json.dumps(benchmark_results)
+    if benchmark_results_flat_json is not None:
+        db_report.benchmark_data_json = json.dumps(benchmark_results_flat_json)
     
-    # updated_at wordt automatisch bijgewerkt door de onupdate in het model
     db.commit()
     db.refresh(db_report)
     return db_report
 
-# NIEUW: Verwijder een benchmark
 def delete_benchmark_report(db: Session, report_uuid: str, user_email: str) -> bool:
     db_report = db.query(BenchmarkReportDB).filter(
         BenchmarkReportDB.report_uuid == report_uuid,
-        BenchmarkReportDB.generated_by_email == user_email # Eigenaar check
+        BenchmarkReportDB.generated_by_email == user_email
     ).first()
 
     if db_report:

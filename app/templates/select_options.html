@@ -18,18 +18,21 @@
         .nav-links a { margin-left: 15px; color: #3498db; text-decoration: none; }
         .nav-links a:hover { text-decoration: underline; }
         .user-info { margin-bottom:20px; font-size: 0.95em; color: #7f8c8d; }
-        .form-section { margin-bottom: 25px; }
+        .form-section { margin-bottom: 30px; padding-bottom: 15px; border-bottom: 1px dotted #ccc; }
+        .form-section:last-child { border-bottom: none; }
         .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
         .grid-item { padding: 10px; border: 1px solid #e0e0e0; border-radius: 4px; background-color: #fdfdfd; transition: box-shadow 0.2s ease; }
         .grid-item:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        input[type="checkbox"] { margin-right: 5px; vertical-align: middle; }
-        input[type="checkbox"] + label { cursor: pointer; }
+        input[type="checkbox"], input[type="radio"] { margin-right: 5px; vertical-align: middle; }
+        input[type="checkbox"] + label, input[type="radio"] + label { cursor: pointer; }
         input[type="text"], input[type="date"] { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; margin-top: 5px; }
-        #propertyListContainer { max-height: 250px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: #fff; border-radius: 4px; margin-top: 5px; }
+        .property-list-container { max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: #fff; border-radius: 4px; margin-top: 5px; }
         .property-item { padding: 6px 2px; border-bottom: 1px dashed #eee; }
         .property-item:last-child { border-bottom: none; }
         .date-inputs div { flex: 1; }
         .error-message { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
+        .property-selection-columns { display: flex; gap: 30px; }
+        .property-column { flex: 1; }
     </style>
 </head>
 <body>
@@ -59,24 +62,46 @@
                 <input type="text" id="benchmark_title" name="benchmark_title" value="{{ benchmark_title if benchmark_title else '' }}" placeholder="Geef je benchmark een duidelijke naam" required>
             </div>
 
-            <div class="form-section">
-                <h3>Selecteer GA4 Properties:</h3>
-                <label for="propertySearch" style="display:block; margin-bottom:5px; font-weight:500;">Zoek GA4 Property:</label>
-                <input type="text" id="propertySearch" onkeyup="filterProperties()" placeholder="Typ om te filteren...">
-                <div id="propertyListContainer">
-                    {% if properties %}
-                        {% for prop in properties %}
-                        <div class="property-item" data-name="{{ prop.name.lower() }} {{ prop.id.lower() }}">
-                            <input type="checkbox" name="property_ids" value="{{ prop.id }}" id="prop_{{ prop.id }}"
-                                   {% if prop.id in (selected_property_ids_db if selected_property_ids_db else []) %}checked{% endif %}>
-                            <label for="prop_{{ prop.id }}">{{ prop.name }} (<code>{{ prop.id }}</code>)</label>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <p>Geen Google Analytics GA4 properties gevonden of geen toegang. <a href="{{ url_for('select_benchmark_options_page') }}">Probeer opnieuw te laden</a>.</p>
-                    {% endif %}
+            <div class="form-section property-selection-columns">
+                <div class="property-column">
+                    <h3>Selecteer Klant A Property (1):</h3>
+                    <label for="clientAPropertySearch" style="display:block; margin-bottom:5px; font-weight:500;">Zoek Klant A Property:</label>
+                    <input type="text" id="clientAPropertySearch" onkeyup="filterClientAProperties()" placeholder="Typ om te filteren...">
+                    <div id="clientAPropertyListContainer" class="property-list-container">
+                        {% if properties %}
+                            {% for prop in properties %}
+                            <div class="property-item" data-name-client-a="{{ prop.name.lower() }} {{ prop.id.lower() }}">
+                                <input type="radio" name="client_a_property_id" value="{{ prop.id }}" id="client_a_{{ prop.id }}"
+                                       {% if prop.id == client_a_property_id_db %}checked{% endif %} required>
+                                <label for="client_a_{{ prop.id }}">{{ prop.name }} (<code>{{ prop.id }}</code>)</label>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p>Geen GA4 properties gevonden.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="property-column">
+                    <h3>Selecteer Benchmark Properties (min. 1):</h3>
+                    <label for="benchmarkPropertySearch" style="display:block; margin-bottom:5px; font-weight:500;">Zoek Benchmark Property:</label>
+                    <input type="text" id="benchmarkPropertySearch" onkeyup="filterBenchmarkProperties()" placeholder="Typ om te filteren...">
+                    <div id="benchmarkPropertyListContainer" class="property-list-container">
+                        {% if properties %}
+                            {% for prop in properties %}
+                            <div class="property-item" data-name-benchmark="{{ prop.name.lower() }} {{ prop.id.lower() }}">
+                                <input type="checkbox" name="benchmark_property_ids" value="{{ prop.id }}" id="bench_{{ prop.id }}"
+                                       {% if prop.id in (benchmark_property_ids_db if benchmark_property_ids_db else []) %}checked{% endif %}>
+                                <label for="bench_{{ prop.id }}">{{ prop.name }} (<code>{{ prop.id }}</code>)</label>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p>Geen GA4 properties gevonden.</p>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
+
 
             <div class="form-section">
                 <h3>Selecteer Periode:</h3>
@@ -105,39 +130,80 @@
             </div>
 
             <div class="form-section">
-                <h3>Selecteer Dimensions:</h3>
+                <h3>Selecteer Dimensions (excl. 'Datum', die wordt apart behandeld):</h3>
                 <div class="grid-container">
                     {% for key, desc in available_dimensions.items() %}
-                    <div class="grid-item">
-                        <input type="checkbox" name="selected_dimensions" value="{{ key }}" id="dim_{{ key }}" {% if key in default_dimensions %}checked{% endif %}>
-                        <label for="dim_{{ key }}">{{ desc }} (<code>{{ key }}</code>)</label>
-                    </div>
+                        {% if key != 'date' %} {# Datum wordt nu standaard meegenomen voor de 'date' kolom in output #}
+                        <div class="grid-item">
+                            <input type="checkbox" name="selected_dimensions" value="{{ key }}" id="dim_{{ key }}" {% if key in default_dimensions and key != 'date' %}checked{% endif %}>
+                            <label for="dim_{{ key }}">{{ desc }} (<code>{{ key }}</code>)</label>
+                        </div>
+                        {% endif %}
                     {% endfor %}
                 </div>
             </div>
             
-            <button type="submit" class="btn">{{ submit_button_text }}</button>
+            <button type="submit" class="btn" onclick="return validatePropertySelections()">{{ submit_button_text }}</button>
             <a href="{{ url_for('my_benchmarks_page') }}" class="btn btn-secondary">Annuleren</a>
         </form>
     </div>
 
     <script>
-    function filterProperties() {
-        var input = document.getElementById('propertySearch');
+    function filterProperties(inputId, containerId, dataAttribute) {
+        var input = document.getElementById(inputId);
         var filter = input.value.toLowerCase();
-        var container = document.getElementById('propertyListContainer');
+        var container = document.getElementById(containerId);
         var items = container.getElementsByClassName('property-item');
         for (var i = 0; i < items.length; i++) {
-            var item_data_name = items[i].getAttribute('data-name');
-            if (item_data_name.indexOf(filter) > -1) {
+            var itemName = items[i].getAttribute(dataAttribute);
+            if (itemName.indexOf(filter) > -1) {
                 items[i].style.display = "";
             } else {
                 items[i].style.display = "none";
             }
         }
     }
-    if (document.getElementById('propertySearch')) {
-        filterProperties();
+
+    function filterClientAProperties() {
+        filterProperties('clientAPropertySearch', 'clientAPropertyListContainer', 'data-name-client-a');
+    }
+
+    function filterBenchmarkProperties() {
+        filterProperties('benchmarkPropertySearch', 'benchmarkPropertyListContainer', 'data-name-benchmark');
+    }
+    
+    // Initial filter calls
+    if (document.getElementById('clientAPropertySearch')) {
+        filterClientAProperties();
+    }
+    if (document.getElementById('benchmarkPropertySearch')) {
+        filterBenchmarkProperties();
+    }
+
+    function validatePropertySelections() {
+        const clientASelected = document.querySelector('input[name="client_a_property_id"]:checked');
+        if (!clientASelected) {
+            alert("Selecteer a.u.b. één Klant A property.");
+            return false;
+        }
+
+        const benchmarkSelected = document.querySelectorAll('input[name="benchmark_property_ids"]:checked');
+        if (benchmarkSelected.length === 0) {
+            alert("Selecteer a.u.b. ten minste één Benchmark property.");
+            return false;
+        }
+
+        // Zorg ervoor dat Klant A property niet ook als Benchmark property is geselecteerd
+        for (let i = 0; i < benchmarkSelected.length; i++) {
+            if (benchmarkSelected[i].value === clientASelected.value) {
+                alert("Klant A property mag niet tegelijkertijd een Benchmark property zijn. Deselecteer deze uit de Benchmark lijst.");
+                benchmarkSelected[i].parentElement.style.backgroundColor = '#f8d7da'; // Highlight
+                return false;
+            } else {
+                 benchmarkSelected[i].parentElement.style.backgroundColor = ''; // Reset highlight
+            }
+        }
+        return true;
     }
     </script>
 </body>
