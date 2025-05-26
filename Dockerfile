@@ -1,22 +1,16 @@
-# Gebruik een officiële Python runtime als base image
+# Stap 1: Gebruik een officiële Python runtime
 FROM python:3.11-slim
 
-# Stel de werkdirectory in de container in
-WORKDIR /app
+# Stap 2: Stel een werkdirectory in
+WORKDIR /code
 
-# Voorkom dat Python output buffert
-ENV PYTHONUNBUFFERED 1
-
-# Installeer dependencies
+# Stap 3: Installeer dependencies (dit wordt gecached als requirements.txt niet wijzigt)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Kopieer de applicatiecode naar de werkdirectory
-# --- DIT IS DE CORRECTIE ---
+# Stap 4: Kopieer de applicatiecode naar de /code/app directory
 COPY ./app ./app
 
-# Expose de poort waarop de app draait
-EXPOSE 8000
-
-# Definieer de command om de app te starten met Uvicorn
+# Stap 5: Stel de command in om de app te draaien
+# Uvicorn wordt gedraaid vanuit /code en kan de 'app' module vinden in /code/app
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

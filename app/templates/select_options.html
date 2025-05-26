@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <title>Selecteer Opties - Benchmark Tool</title>
+    <title>{{ "Bewerk" if report_uuid else "Selecteer" }} Opties - Benchmark Tool</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background-color: #f8f9fa; color: #333; line-height: 1.6; } 
         .container { max-width: 960px; margin: 20px auto; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
@@ -12,9 +12,12 @@
         code { background-color: #e8f0f3; padding: 3px 6px; border-radius: 4px; font-family: Consolas, Monaco, monospace; color: #2980b9; font-size: 0.9em; }
         .btn { padding: 12px 22px; background-image: linear-gradient(to right, #3498db , #2980b9); color: white; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 25px; font-size: 16px; font-weight: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.15); transition: background-image 0.3s ease, box-shadow 0.3s ease; }
         .btn:hover { background-image: linear-gradient(to right, #2980b9 , #3498db); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        .logout-btn { color: #e74c3c; text-decoration: none; font-size: 0.9em; }
-        .logout-btn:hover { text-decoration: underline; }
-        .user-info { margin-bottom:20px; font-size: 0.95em; color: #7f8c8d; text-align: right; }
+        .btn-secondary { background-image: linear-gradient(to right, #95a5a6 , #7f8c8d); margin-left: 10px;}
+        .btn-secondary:hover { background-image: linear-gradient(to right, #7f8c8d , #95a5a6); }
+        .nav-links { margin-bottom: 20px; text-align: right; }
+        .nav-links a { margin-left: 15px; color: #3498db; text-decoration: none; }
+        .nav-links a:hover { text-decoration: underline; }
+        .user-info { margin-bottom:20px; font-size: 0.95em; color: #7f8c8d; }
         .form-section { margin-bottom: 25px; }
         .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
         .grid-item { padding: 10px; border: 1px solid #e0e0e0; border-radius: 4px; background-color: #fdfdfd; transition: box-shadow 0.2s ease; }
@@ -26,17 +29,36 @@
         .property-item { padding: 6px 2px; border-bottom: 1px dashed #eee; }
         .property-item:last-child { border-bottom: none; }
         .date-inputs div { flex: 1; }
+        .error-message { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h1>Selecteer Benchmark Opties</h1>
+        <div class="nav-links">
+            <span class="user-info">Ingelogd als: <strong>{{ user_email }}</strong></span>
+            <a href="{{ url_for('my_benchmarks_page') }}">Mijn Benchmarks</a>
             <a href="{{ url_for('logout_route') }}" class="logout-btn">Uitloggen</a>
         </div>
-        <p class="user-info">Ingelogd als: <strong>{{ user_email }}</strong></p>
+
+        <h1>{{ "Bewerk Benchmark" if report_uuid else "Nieuwe Benchmark Aanmaken" }}</h1>
         
-        <form action="{{ url_for('generate_and_save_benchmark_route') }}" method="post">
+        {% if error_message_fetch %}
+            <div class="error-message">{{ error_message_fetch }}</div>
+        {% endif %}
+        {% if error_message_form %}
+            <div class="error-message">{{ error_message_form }}</div>
+        {% endif %}
+
+        <form action="{{ form_action_url }}" method="post">
+            {% if report_uuid %}
+                <input type="hidden" name="report_uuid" value="{{ report_uuid }}">
+            {% endif %}
+
+            <div class="form-section">
+                <h3><label for="benchmark_title" style="font-weight:bold; color: #34495e;">Benchmark Titel:</label></h3>
+                <input type="text" id="benchmark_title" name="benchmark_title" value="{{ benchmark_title if benchmark_title else '' }}" placeholder="Geef je benchmark een duidelijke naam" required>
+            </div>
+
             <div class="form-section">
                 <h3>Selecteer GA4 Properties:</h3>
                 <label for="propertySearch" style="display:block; margin-bottom:5px; font-weight:500;">Zoek GA4 Property:</label>
@@ -45,12 +67,13 @@
                     {% if properties %}
                         {% for prop in properties %}
                         <div class="property-item" data-name="{{ prop.name.lower() }} {{ prop.id.lower() }}">
-                            <input type="checkbox" name="property_ids" value="{{ prop.id }}" id="prop_{{ prop.id }}">
+                            <input type="checkbox" name="property_ids" value="{{ prop.id }}" id="prop_{{ prop.id }}"
+                                   {% if prop.id in (selected_property_ids_db if selected_property_ids_db else []) %}checked{% endif %}>
                             <label for="prop_{{ prop.id }}">{{ prop.name }} (<code>{{ prop.id }}</code>)</label>
                         </div>
                         {% endfor %}
                     {% else %}
-                        <p>Geen Google Analytics GA4 properties gevonden of geen toegang.</p>
+                        <p>Geen Google Analytics GA4 properties gevonden of geen toegang. <a href="{{ url_for('select_benchmark_options_page') }}">Probeer opnieuw te laden</a>.</p>
                     {% endif %}
                 </div>
             </div>
@@ -93,7 +116,8 @@
                 </div>
             </div>
             
-            <button type="submit" class="btn">Genereer & Sla Benchmark Op</button>
+            <button type="submit" class="btn">{{ submit_button_text }}</button>
+            <a href="{{ url_for('my_benchmarks_page') }}" class="btn btn-secondary">Annuleren</a>
         </form>
     </div>
 
@@ -112,7 +136,6 @@
             }
         }
     }
-    // Initial filter call in case there's pre-filled search text (e.g. browser back button)
     if (document.getElementById('propertySearch')) {
         filterProperties();
     }
