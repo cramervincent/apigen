@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  apigen:
+    build: .
+    container_name: apigen_app
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Map poort 8001 op de host naar poort 8000 in de container.
+      # We gebruiken 8001 om conflicten met andere apps te vermijden.
+      - "127.0.0.1:8001:8000"
+    volumes:
+      # Persistente opslag voor de SQLite database
+      - ./database_data:/app
+
+volumes:
+  database_data:
