@@ -8,6 +8,13 @@ reset:
 	docker compose build --no-cache
 	docker compose up -d
 
+reset_hard:
+	rm -rf ./benchmark_reports.db
+	docker compose down -v
+	docker compose build --no-cache
+	docker compose up -d
+
+
 # Build or rebuild services
 build:
 	docker compose build

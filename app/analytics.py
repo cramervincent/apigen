@@ -1,8 +1,8 @@
 # app/analytics.py
+import asyncio # <--- TOEGEVOEGD
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from collections import defaultdict
-import copy # Voor deepcopy
 
 from google.oauth2.credentials import Credentials
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
@@ -13,12 +13,17 @@ from google.analytics.data_v1beta.types import (
 def _fetch_ga_data_for_property(
     data_client: BetaAnalyticsDataClient,
     property_id: str,
-    dimensions: List[Dimension],
-    metrics: List[Metric],
+    dimensions: List[Dimension], # GA Dimension objecten
+    metrics: List[Metric],       # GA Metric objecten
     start_date_str: str,
     end_date_str: str
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    """Hulpfunctie om data voor één property op te halen en te structureren."""
+    """
+    Hulpfunctie om data voor één property op te halen.
+    Retourneert een lijst van dictionaries, waarbij elke dict een rij uit GA vertegenwoordigt.
+    Elke dict heeft keys 'dimensions' (een dict van dim_name: dim_value) en 
+    'metrics' (een dict van metric_name: metric_value).
+    """
     property_data_rows = []
     error = None
     try:
@@ -31,7 +36,7 @@ def _fetch_ga_data_for_property(
             dimensions=dimensions,
             metrics=metrics,
             date_ranges=[DateRange(start_date=start_date_str, end_date=end_date_str)],
-            keep_empty_rows=True # Belangrijk voor correcte aggregatie later
+            keep_empty_rows=True # Belangrijk voor consistente aggregatie
         ))
 
         dimension_header_names = [header.name for header in response.dimension_headers]
@@ -41,14 +46,22 @@ def _fetch_ga_data_for_property(
             row_dict = {"dimensions": {}, "metrics": {}}
             for i, dim_value_obj in enumerate(api_row.dimension_values):
                 dim_name_from_header = dimension_header_names[i]
-                row_dict["dimensions"][dim_name_from_header] = dim_value_obj.value
+                # Converteer GA datumformaat YYYYMMDD naar YYYY-MM-DD indien 'date' dimensie
+                if dim_name_from_header == "date":
+                    try:
+                        dt_obj = datetime.strptime(dim_value_obj.value, "%Y%m%d")
+                        row_dict["dimensions"][dim_name_from_header] = dt_obj.strftime("%Y-%m-%d")
+                    except ValueError:
+                        row_dict["dimensions"][dim_name_from_header] = dim_value_obj.value # Fallback
+                else:
+                    row_dict["dimensions"][dim_name_from_header] = dim_value_obj.value
             
             for i, metric_value_obj in enumerate(api_row.metric_values):
                 metric_name_from_header = metric_header_names[i]
                 try:
                     row_dict["metrics"][metric_name_from_header] = float(metric_value_obj.value)
                 except ValueError:
-                    row_dict["metrics"][metric_name_from_header] = 0.0 # Of None, afhankelijk van hoe je het wilt
+                    row_dict["metrics"][metric_name_from_header] = 0.0
             property_data_rows.append(row_dict)
         
     except Exception as e:
@@ -62,204 +75,116 @@ async def generate_benchmark_data_from_google(
     google_credentials: Credentials,
     client_a_property_id: str,
     benchmark_property_ids: List[str],
-    selected_metric_api_names: List[str],
-    selected_dimension_api_names: List[str], # Dit zijn de API namen
+    selected_metric_api_names: List[str],    # API namen van geselecteerde metrics
+    selected_dimension_api_names: List[str], # API namen van geselecteerde NIET-DATUM dimensies
     start_date_str: str,
     end_date_str: str
-) -> List[Dict[str, Any]]: # Returnwaarde is nu de platte lijst
+) -> List[Dict[str, Any]]: # Returnwaarde is nu de lijst van "brede" dictionaries
     
     data_client = BetaAnalyticsDataClient(credentials=google_credentials)
     
-    # Zorg dat 'date' altijd een dimensie is, als die niet is geselecteerd, voeg hem toe.
-    # De outputstructuur vereist een 'date' veld.
-    final_dimension_api_names = list(selected_dimension_api_names) # Kopie
-    if "date" not in final_dimension_api_names:
-        final_dimension_api_names.insert(0, "date") # Voeg 'date' vooraan toe voor consistentie
-
+    # Dimensies voor de GA API call: 'date' + geselecteerde niet-datum dimensies
+    ga_query_dimension_names = ["date"] + selected_dimension_api_names
+    
     final_ga_metrics = [Metric(name=m) for m in selected_metric_api_names]
-    final_ga_dimensions = [Dimension(name=d) for d in final_dimension_api_names]
+    final_ga_dimensions = [Dimension(name=d) for d in ga_query_dimension_names]
 
     if not final_ga_metrics:
         raise ValueError("Geen metrics geselecteerd.")
-    if not final_ga_dimensions: # 'date' is nu altijd aanwezig
-        raise ValueError("Geen dimensies geselecteerd (minimaal 'date' is nodig).")
 
-    flat_report_data: List[Dict[str, Any]] = []
     errors_dict: Dict[str, str] = {}
-
-    # 1. Data ophalen voor Klant A
-    # print(f"Fetching data for Klant A: {client_a_property_id}")
-    client_a_raw_data, client_a_error = _fetch_ga_data_for_property(
-        data_client, client_a_property_id, final_ga_dimensions, final_ga_metrics, start_date_str, end_date_str
+    
+    # --- Data verwerking voor Klant A ---
+    processed_client_a_data: Dict[Tuple, Dict[str, Any]] = {} # Key: (date, dim_val1,...), Value: {metric1: val1,...}
+    
+    # Gebruik asyncio.to_thread om de synchrone GA client call in een aparte thread uit te voeren
+    client_a_raw_rows, client_a_error = await asyncio.to_thread(
+        _fetch_ga_data_for_property, # De functie zelf (zonder haakjes)
+        data_client, client_a_property_id, final_ga_dimensions, final_ga_metrics, 
+        start_date_str, end_date_str
     )
     if client_a_error:
         errors_dict[client_a_property_id] = client_a_error
-    # Zelfs met een error, gaan we door als er benchmark properties zijn, anders is er geen data.
-    # Als Klant A faalt en er zijn geen benchmark properties, dan is er een groter probleem.
-    if not client_a_raw_data and not benchmark_property_ids and client_a_error:
-         raise ValueError(f"Kon geen data ophalen voor Klant A ({client_a_property_id}): {client_a_error} en geen benchmark properties geselecteerd.")
+    
+    if client_a_raw_rows:
+        for row_dict in client_a_raw_rows:
+            key_dim_values_list = [row_dict["dimensions"].get("date", "N/A")]
+            for dim_name in selected_dimension_api_names: 
+                key_dim_values_list.append(row_dict["dimensions"].get(dim_name, "(not set)"))
+            
+            key_tuple = tuple(key_dim_values_list)
+            processed_client_a_data[key_tuple] = row_dict["metrics"]
 
+    # --- Data verwerking voor Benchmark ---
+    aggregated_benchmark_metrics: Dict[Tuple, Dict[str, Dict[str, float]]] = defaultdict(
+        lambda: {m_api: {"sum": 0.0, "count_props": 0} for m_api in selected_metric_api_names}
+    )
+    successful_benchmark_prop_count = 0
 
-    # 2. Data ophalen en aggregeren voor Benchmark Properties
-    benchmark_aggregated_data = defaultdict(lambda: {
-        metric_name: {"sum": 0.0, "count": 0} for metric_name in selected_metric_api_names
-    })
-    # Key voor benchmark_aggregated_data: tuple(dimension_values_in_ga_order_excluding_date, date_value)
-    # Dit is om de sommen per unieke combinatie van dimensies (en datum) bij te houden.
-
-    successful_benchmark_properties_count = 0
     if benchmark_property_ids:
         for bench_prop_id in benchmark_property_ids:
-            # print(f"Fetching data for Benchmark property: {bench_prop_id}")
-            bench_raw_data, bench_error = _fetch_ga_data_for_property(
-                data_client, bench_prop_id, final_ga_dimensions, final_ga_metrics, start_date_str, end_date_str
+            bench_raw_rows, bench_error = await asyncio.to_thread(
+                _fetch_ga_data_for_property, # De functie zelf
+                data_client, bench_prop_id, final_ga_dimensions, final_ga_metrics,
+                start_date_str, end_date_str
             )
             if bench_error:
                 errors_dict[bench_prop_id] = bench_error
-                continue # Ga naar volgende benchmark property bij fout
-            
-            if not bench_raw_data: # Geen data voor deze property, telt niet mee voor gemiddelde
                 continue
-
-            successful_benchmark_properties_count += 1
-            for row in bench_raw_data:
-                # Maak een key op basis van alle dimensiewaarden in de volgorde van final_dimension_api_names
-                # De 'date' dimensie moet hierin zitten.
-                dim_values_tuple = tuple(row["dimensions"].get(dim_api_name, "(not set)") for dim_api_name in final_dimension_api_names)
-                
-                for metric_api_name, value in row["metrics"].items():
-                    benchmark_aggregated_data[dim_values_tuple][metric_api_name]["sum"] += value
-                    benchmark_aggregated_data[dim_values_tuple][metric_api_name]["count"] += 1 # Telt hoe vaak deze metric voor deze dim-combo is gezien over properties
-
-    # Als er errors zijn, kunnen we die eventueel teruggeven. Voor nu focussen we op de data.
-    if errors_dict:
-        print(f"WARNING (analytics.py): Errors occurred during data fetching: {errors_dict}")
-        # Je zou kunnen kiezen om hier een exception te raisen als *alle* fetches falen.
-        if not client_a_raw_data and successful_benchmark_properties_count == 0:
-            raise ValueError(f"Kon voor geen enkele property data ophalen. Fouten: {errors_dict}")
-
-
-    # 3. Transformeer Klant A data naar platte structuur
-    # print("Transforming Klant A data...")
-    for client_row in client_a_raw_data:
-        date_value = client_row["dimensions"].get("date", "N/A") # 'date' moet er zijn
-        
-        # Itereer over de *geselecteerde* niet-datum dimensies voor de output structuur
-        for dim_api_name_selected in selected_dimension_api_names: # Gebruik originele selectie
-            if dim_api_name_selected == "date": # 'date' wordt al apart behandeld
+            if not bench_raw_rows:
                 continue
-
-            dim_value_for_output = client_row["dimensions"].get(dim_api_name_selected, "(not set)")
             
-            for metric_api_name, value in client_row["metrics"].items():
-                if metric_api_name not in selected_metric_api_names: continue # Alleen geselecteerde metrics
+            successful_benchmark_prop_count += 1
+            for row_dict in bench_raw_rows:
+                key_dim_values_list = [row_dict["dimensions"].get("date", "N/A")]
+                for dim_name in selected_dimension_api_names:
+                    key_dim_values_list.append(row_dict["dimensions"].get(dim_name, "(not set)"))
+                key_tuple = tuple(key_dim_values_list)
 
-                flat_report_data.append({
-                    "group": client_a_property_id, # Of een alias "Klant A"
-                    "date": date_value,
-                    "dimension_type": dim_api_name_selected, # De API naam van de dimensie
-                    "dimension_value": dim_value_for_output,
-                    "metric": metric_api_name, # De API naam van de metric
-                    "value": round(value, 2)
-                })
-        
-        # Als er GEEN andere dimensies dan 'date' zijn geselecteerd,
-        # maak dan toch entries voor de metrics met een placeholder dimensie.
-        if all(d == "date" for d in selected_dimension_api_names) or not any(d != "date" for d in selected_dimension_api_names) :
-            for metric_api_name, value in client_row["metrics"].items():
-                if metric_api_name not in selected_metric_api_names: continue
-                flat_report_data.append({
-                    "group": client_a_property_id,
-                    "date": date_value,
-                    "dimension_type": "N/A", # Geen andere dimensie
-                    "dimension_value": "N/A",
-                    "metric": metric_api_name,
-                    "value": round(value, 2)
-                })
-
-
-    # 4. Transformeer Benchmark data naar platte structuur
-    # print("Transforming Benchmark data...")
-    if successful_benchmark_properties_count > 0:
-        for dim_values_tuple, metrics_agg in benchmark_aggregated_data.items():
-            # Haal de date_value uit de dim_values_tuple.
-            # We weten dat 'date' de eerste is in final_dimension_api_names.
-            date_idx = final_dimension_api_names.index("date")
-            date_value = dim_values_tuple[date_idx]
-
-            # Maak een dictionary van de dimensiewaarden voor makkelijke lookup
-            current_row_dims_dict = {final_dimension_api_names[i]: dim_values_tuple[i] for i in range(len(final_dimension_api_names))}
-
-            for dim_api_name_selected in selected_dimension_api_names: # Gebruik originele selectie
-                if dim_api_name_selected == "date":
-                    continue
-                
-                dim_value_for_output = current_row_dims_dict.get(dim_api_name_selected, "(not set)")
-
-                for metric_api_name, agg_values in metrics_agg.items():
-                    if metric_api_name not in selected_metric_api_names: continue
-
-                    # Gemiddelde berekenen. De 'count' hier is het aantal keren dat een waarde voor deze metric
-                    # is bijgedragen aan de som *voor deze specifieke dimensie combinatie*.
-                    # Voor het benchmark gemiddelde willen we delen door successful_benchmark_properties_count.
-                    # Echter, als een property geen data had voor een *specifieke dimensie combinatie*, dan
-                    # mag die niet meetellen voor het gemiddelde van *die specifieke combinatie*.
-                    # De huidige `agg_values["count"]` is niet per se `successful_benchmark_properties_count`.
-                    # Het is het aantal properties dat data had voor *deze specifieke rij*.
-                    
-                    # Correctie: Het gemiddelde moet over het aantal properties dat *überhaupt* data heeft geleverd.
-                    # Als een property voor een bepaalde dim-combo geen data heeft, is de som 0 en telt het niet mee.
-                    # Dus delen door successful_benchmark_properties_count is correct.
-                    
-                    avg_value = 0
-                    # De agg_values["count"] is hier het aantal properties dat data had voor deze specifieke dimensie-combinatie
-                    # Dit is niet per se gelijk aan successful_benchmark_properties_count.
-                    # We moeten de totale som delen door het aantal properties dat uberhaupt data heeft geleverd.
-                    if successful_benchmark_properties_count > 0: # Voorkom ZeroDivisionError
-                         avg_value = agg_values["sum"] / successful_benchmark_properties_count
-                    else: # Zou niet moeten gebeuren als we hier komen
-                        avg_value = 0
-
-
-                    flat_report_data.append({
-                        "group": "Benchmark",
-                        "date": date_value,
-                        "dimension_type": dim_api_name_selected,
-                        "dimension_value": dim_value_for_output,
-                        "metric": metric_api_name,
-                        "value": round(avg_value, 2)
-                    })
-            
-            # Als er GEEN andere dimensies dan 'date' zijn geselecteerd
-            if all(d == "date" for d in selected_dimension_api_names) or not any(d != "date" for d in selected_dimension_api_names):
-                for metric_api_name, agg_values in metrics_agg.items():
-                    if metric_api_name not in selected_metric_api_names: continue
-                    avg_value = 0
-                    if successful_benchmark_properties_count > 0:
-                        avg_value = agg_values["sum"] / successful_benchmark_properties_count
-                    
-                    flat_report_data.append({
-                        "group": "Benchmark",
-                        "date": date_value,
-                        "dimension_type": "N/A",
-                        "dimension_value": "N/A",
-                        "metric": metric_api_name,
-                        "value": round(avg_value, 2)
-                    })
+                for m_api, value in row_dict["metrics"].items():
+                    if m_api in selected_metric_api_names:
+                        aggregated_benchmark_metrics[key_tuple][m_api]["sum"] += value
     
-    # Sorteer de uiteindelijke data voor consistentie (optioneel maar aanbevolen)
-    # Sorteer op group, dan date, dan dimension_type, dan dimension_value, dan metric
-    # flat_report_data.sort(key=lambda x: (x["group"], x["date"], x["dimension_type"], str(x["dimension_value"]), x["metric"]))
+    averaged_benchmark_data: Dict[Tuple, Dict[str, Any]] = {}
+    if successful_benchmark_prop_count > 0:
+        for key_tuple, metrics_sums_counts in aggregated_benchmark_metrics.items():
+            averaged_benchmark_data[key_tuple] = {}
+            for m_api, data in metrics_sums_counts.items():
+                averaged_benchmark_data[key_tuple][m_api] = data["sum"] / successful_benchmark_prop_count
+    
+    # --- Samenstellen van de uiteindelijke "brede" output ---
+    final_wide_output: List[Dict[str, Any]] = []
+    
+    # Verwerk Klant A data
+    for key_tuple, metrics_values_dict in processed_client_a_data.items():
+        output_row = {"group": client_a_property_id} 
+        output_row["date"] = key_tuple[0] 
+        
+        for i, dim_name in enumerate(selected_dimension_api_names): 
+            output_row[dim_name] = key_tuple[i + 1] 
+            
+        for metric_name, value in metrics_values_dict.items():
+            if metric_name in selected_metric_api_names:
+                output_row[metric_name] = round(value, 2)
+        final_wide_output.append(output_row)
 
-    if not flat_report_data and errors_dict:
-         # Als er helemaal geen data is en wel errors, geef een meer specifieke melding.
-        # De eerdere check was alleen als Klant A faalde en er geen benchmark props waren.
-        raise ValueError(f"Kon geen benchmark data genereren. Fouten opgetreden: {errors_dict}")
-    elif not flat_report_data:
-        # Geen errors, maar ook geen data (bijv. geselecteerde periode heeft geen data)
-        # Dit is geen ValueError, maar de UI moet dit kunnen tonen.
-        # De lege lijst wordt geretourneerd.
-        pass
+    # Verwerk Benchmark data
+    for key_tuple, metrics_values_dict in averaged_benchmark_data.items():
+        output_row = {"group": "Benchmark"}
+        output_row["date"] = key_tuple[0]
+        
+        for i, dim_name in enumerate(selected_dimension_api_names):
+            output_row[dim_name] = key_tuple[i + 1]
+            
+        for metric_name, value in metrics_values_dict.items():
+            if metric_name in selected_metric_api_names:
+                output_row[metric_name] = round(value, 2)
+        final_wide_output.append(output_row)
 
+    if not final_wide_output and errors_dict:
+        error_summary = "; ".join([f"{prop}: {err}" for prop, err in errors_dict.items()])
+        raise ValueError(f"Kon geen benchmark data genereren. Fouten: {error_summary}")
+    elif not final_wide_output and not client_a_raw_rows and successful_benchmark_prop_count == 0 :
+        pass 
 
-    return flat_report_data
+    return final_wide_output
