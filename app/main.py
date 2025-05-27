@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware # Deze is WEL nodig
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware # NIEUW & CORRECT
 
 from .database import create_db_and_tables
 from .config import settings

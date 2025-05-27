@@ -10,6 +10,7 @@ services:
     ports:
       # Map poort 8001 op de host naar poort 8000 in de container.
       - "127.0.0.1:8001:8000"
+    # command: sh -c "sleep infinity"
     volumes:
       # Mount de volledige projectmap ('.') naar de /app map in de container.
       # 1. Dit maakt lokale bestanden (zoals alembic.ini) direct beschikbaar.
