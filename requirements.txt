@@ -1,3 +1,4 @@
+# requirements.txt
 fastapi
 uvicorn[standard]
 python-multipart
@@ -14,3 +15,4 @@ jinja2
 pydantic-settings
 libsass
 alembic
+starlette
