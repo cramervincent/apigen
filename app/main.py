@@ -2,6 +2,10 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trusted_host import TrustedHostMiddleware # Voorbeeld, maar ProxyHeaders is beter
+from fastapi.middleware.cors import CORSMiddleware # Voorbeeld
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware # NIEUW
+
 from .database import create_db_and_tables
 from .config import settings
 from .routes import ui, api
@@ -10,23 +14,21 @@ from .styling import compile_scss
 # Imports voor Alembic
 from alembic.config import Config
 from alembic import command
-import traceback # Nieuwe import voor betere error logging
+import traceback
 
 # Compileer SCSS naar CSS bij opstarten
 compile_scss()
 
-# VERBETERD: Database migraties uitvoeren met duidelijke logging
+# Database migraties uitvoeren met duidelijke logging
 print("="*50)
 print("CONTROLEREN EN UITVOEREN DATABASE MIGRATIES")
 print("="*50)
 try:
     alembic_cfg = Config("alembic.ini")
-    # Stel expliciet het pad in naar de migratie-scripts
     alembic_cfg.set_main_option("script_location", "alembic")
     command.upgrade(alembic_cfg, "head")
     print("✅ Migraties succesvol gecontroleerd en uitgevoerd.")
 except Exception as e:
-    # We printen de volledige foutmelding voor duidelijke debugging
     print("❌ FOUT TIJDENS UITVOEREN VAN DATABASE MIGRATIES:")
     print(traceback.format_exc())
 finally:
@@ -40,14 +42,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Mount static files directory
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
 # Middleware
+# NIEUW: Voeg ProxyHeadersMiddleware toe. Dit zorgt ervoor dat FastAPI de
+# X-Forwarded-* headers van Nginx leest en correcte https:// links genereert.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SESSION_SECRET_KEY
 )
+
+# Mount static files directory
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Routers
 app.include_router(ui.router, tags=["User Interface"])
