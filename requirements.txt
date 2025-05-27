@@ -12,3 +12,5 @@ itsdangerous
 SQLAlchemy
 jinja2
 pydantic-settings
+libsass
+alembic

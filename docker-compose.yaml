@@ -1,4 +1,4 @@
-version: '3.8'
+# docker-compose.yaml
 
 services:
   apigen:
@@ -9,11 +9,12 @@ services:
       - .env
     ports:
       # Map poort 8001 op de host naar poort 8000 in de container.
-      # We gebruiken 8001 om conflicten met andere apps te vermijden.
       - "127.0.0.1:8001:8000"
     volumes:
-      # Persistente opslag voor de SQLite database
-      - ./database_data:/app
+      # Mount de volledige projectmap ('.') naar de /app map in de container.
+      # 1. Dit maakt lokale bestanden (zoals alembic.ini) direct beschikbaar.
+      # 2. Wijzigingen in je code zijn direct zichtbaar in de container (handig voor dev).
+      # 3. Het SQLite databasebestand wordt nu in je projectmap op je computer opgeslagen.
+      - .:/app
 
-volumes:
-  database_data:
+# De aparte 'volumes:' sleutel onderaan is niet meer nodig met deze aanpak.

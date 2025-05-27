@@ -1,167 +1,133 @@
-<!DOCTYPE html>
-<html lang="nl">
-<head>
-    <meta charset="UTF-8">
-    <title>{{ "Bewerk" if report_uuid else "Selecteer" }} Opties - Benchmark Tool</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background-color: #f8f9fa; color: #333; line-height: 1.6; } 
-        .container { max-width: 960px; margin: 20px auto; background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top:0; font-size:28px; }
-        h3 { color: #34495e; margin-top: 25px; margin-bottom: 12px; font-size: 18px; border-bottom: 1px solid #eee; padding-bottom: 5px;} 
-        label { margin-left: 6px; color: #555; display: inline-block; vertical-align: middle; } 
-        code { background-color: #e8f0f3; padding: 3px 6px; border-radius: 4px; font-family: Consolas, Monaco, monospace; color: #2980b9; font-size: 0.9em; }
-        .btn { padding: 12px 22px; background-image: linear-gradient(to right, #3498db , #2980b9); color: white; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 25px; font-size: 16px; font-weight: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.15); transition: background-image 0.3s ease, box-shadow 0.3s ease; }
-        .btn:hover { background-image: linear-gradient(to right, #2980b9 , #3498db); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        .btn-secondary { background-image: linear-gradient(to right, #95a5a6 , #7f8c8d); margin-left: 10px;}
-        .btn-secondary:hover { background-image: linear-gradient(to right, #7f8c8d , #95a5a6); }
-        .nav-links { margin-bottom: 20px; text-align: right; }
-        .nav-links a { margin-left: 15px; color: #3498db; text-decoration: none; }
-        .nav-links a:hover { text-decoration: underline; }
-        .user-info { margin-bottom:20px; font-size: 0.95em; color: #7f8c8d; }
-        .form-section { margin-bottom: 30px; padding-bottom: 15px; border-bottom: 1px dotted #ccc; }
-        .form-section:last-child { border-bottom: none; }
-        .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-        .grid-item { padding: 10px; border: 1px solid #e0e0e0; border-radius: 4px; background-color: #fdfdfd; transition: box-shadow 0.2s ease; }
-        .grid-item:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        input[type="checkbox"], input[type="radio"] { margin-right: 5px; vertical-align: middle; }
-        input[type="checkbox"] + label, input[type="radio"] + label { cursor: pointer; }
-        input[type="text"], input[type="date"] { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; margin-top: 5px; }
-        .property-list-container { max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: #fff; border-radius: 4px; margin-top: 5px; }
-        .property-item { padding: 6px 2px; border-bottom: 1px dashed #eee; }
-        .property-item:last-child { border-bottom: none; }
-        .date-inputs div { flex: 1; }
-        .error-message { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
-        .property-selection-columns { display: flex; gap: 30px; }
-        .property-column { flex: 1; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="nav-links">
-            <span class="user-info">Ingelogd als: <strong>{{ user_email }}</strong></span>
-            <a href="{{ url_for('my_benchmarks_page') }}">Mijn Benchmarks</a>
-            <a href="{{ url_for('logout_route') }}" class="logout-btn">Uitloggen</a>
-        </div>
+{% extends "main_layout.html" %}
 
-        <h1>{{ "Bewerk Benchmark" if report_uuid else "Nieuwe Benchmark Aanmaken" }}</h1>
-        
-        {% if error_message_fetch %}
-            <div class="error-message">{{ error_message_fetch }}</div>
-        {% endif %}
-        {% if error_message_form %}
-            <div class="error-message">{{ error_message_form }}</div>
-        {% endif %}
+{% block title %}{{ "Bewerk" if report_uuid else "Nieuwe" }} Benchmark - {{ super() }}{% endblock %}
 
-        <form action="{{ form_action_url }}" method="post">
-            {% if report_uuid %}
-                <input type="hidden" name="report_uuid" value="{{ report_uuid }}">
-            {% endif %}
+{% block content %}
+<h1 class="h2 mb-4">{{ "Bewerk Benchmark" if report_uuid else "Nieuwe Benchmark Aanmaken" }}</h1>
 
+{% if error_message_fetch %}
+    <div class="alert alert-danger">{{ error_message_fetch }}</div>
+{% endif %}
+
+<form action="{{ form_action_url }}" method="post" id="benchmarkForm">
+    {% if report_uuid %}
+        <input type="hidden" name="report_uuid" value="{{ report_uuid }}">
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
             <div class="form-section">
-                <h3><label for="benchmark_title" style="font-weight:bold; color: #34495e;">Benchmark Titel:</label></h3>
-                <input type="text" id="benchmark_title" name="benchmark_title" value="{{ benchmark_title if benchmark_title else '' }}" placeholder="Geef je benchmark een duidelijke naam" required>
+                <h3 class="h5 mb-3">1. Benchmark Titel</h3>
+                <input type="text" class="form-control" id="benchmark_title" name="benchmark_title" value="{{ benchmark_title if benchmark_title else '' }}" placeholder="Geef je benchmark een duidelijke naam" required>
             </div>
 
-            <div class="form-section property-selection-columns">
-                <div class="property-column">
-                    <h3>Selecteer Klant A Property (1):</h3>
-                    <label for="clientAPropertySearch" style="display:block; margin-bottom:5px; font-weight:500;">Zoek Klant A Property:</label>
-                    <input type="text" id="clientAPropertySearch" onkeyup="filterClientAProperties()" placeholder="Typ om te filteren...">
-                    <div id="clientAPropertyListContainer" class="property-list-container">
+            <div class="form-section row">
+                 <h3 class="h5 mb-3">2. Selecteer Properties</h3>
+                <div class="col-md-6 mb-3 mb-md-0">
+                    <label for="clientAPropertySearch" class="form-label fw-bold">Klant A Property (1)</label>
+                    <input type="text" id="clientAPropertySearch" onkeyup="filterClientAProperties()" class="form-control mb-2" placeholder="Typ om te filteren...">
+                    <div id="clientAPropertyListContainer" class="property-list-container form-control">
                         {% if properties %}
                             {% for prop in properties %}
-                            <div class="property-item" data-name-client-a="{{ prop.name.lower() }} {{ prop.id.lower() }}">
-                                <input type="radio" name="client_a_property_id" value="{{ prop.id }}" id="client_a_{{ prop.id }}"
+                            <div class="form-check property-item" data-name-client-a="{{ prop.name.lower() }} {{ prop.id.lower() }}">
+                                <input class="form-check-input" type="radio" name="client_a_property_id" value="{{ prop.id }}" id="client_a_{{ prop.id }}"
                                        {% if prop.id == client_a_property_id_db %}checked{% endif %} required>
-                                <label for="client_a_{{ prop.id }}">{{ prop.name }} (<code>{{ prop.id }}</code>)</label>
+                                <label class="form-check-label" for="client_a_{{ prop.id }}">{{ prop.name }}<br><small class="text-muted">{{ prop.id }}</small></label>
                             </div>
                             {% endfor %}
                         {% else %}
-                            <p>Geen GA4 properties gevonden.</p>
+                            <p class="text-muted p-2">Geen GA4 properties gevonden.</p>
                         {% endif %}
                     </div>
                 </div>
 
-                <div class="property-column">
-                    <h3>Selecteer Benchmark Properties (min. 1):</h3>
-                    <label for="benchmarkPropertySearch" style="display:block; margin-bottom:5px; font-weight:500;">Zoek Benchmark Property:</label>
-                    <input type="text" id="benchmarkPropertySearch" onkeyup="filterBenchmarkProperties()" placeholder="Typ om te filteren...">
-                    <div id="benchmarkPropertyListContainer" class="property-list-container">
+                <div class="col-md-6">
+                    <label for="benchmarkPropertySearch" class="form-label fw-bold">Benchmark Properties (min. 1)</label>
+                    <input type="text" id="benchmarkPropertySearch" onkeyup="filterBenchmarkProperties()" class="form-control mb-2" placeholder="Typ om te filteren...">
+                    <div id="benchmarkPropertyListContainer" class="property-list-container form-control">
                         {% if properties %}
                             {% for prop in properties %}
-                            <div class="property-item" data-name-benchmark="{{ prop.name.lower() }} {{ prop.id.lower() }}">
-                                <input type="checkbox" name="benchmark_property_ids" value="{{ prop.id }}" id="bench_{{ prop.id }}"
+                            <div class="form-check property-item" data-name-benchmark="{{ prop.name.lower() }} {{ prop.id.lower() }}">
+                                <input class="form-check-input" type="checkbox" name="benchmark_property_ids" value="{{ prop.id }}" id="bench_{{ prop.id }}"
                                        {% if prop.id in (benchmark_property_ids_db if benchmark_property_ids_db else []) %}checked{% endif %}>
-                                <label for="bench_{{ prop.id }}">{{ prop.name }} (<code>{{ prop.id }}</code>)</label>
+                                <label class="form-check-label" for="bench_{{ prop.id }}">{{ prop.name }}<br><small class="text-muted">{{ prop.id }}</small></label>
                             </div>
                             {% endfor %}
                         {% else %}
-                            <p>Geen GA4 properties gevonden.</p>
+                            <p class="text-muted p-2">Geen GA4 properties gevonden.</p>
                         {% endif %}
                     </div>
                 </div>
             </div>
 
-
             <div class="form-section">
-                <h3>Selecteer Periode:</h3>
-                <div style="display:flex; gap: 20px; margin-bottom:20px;" class="date-inputs">
-                    <div>
-                        <label for="start_date" style="display:block; margin-bottom:5px; font-weight:500;">Startdatum:</label>
-                        <input type="date" id="start_date" name="start_date" value="{{ default_start_date }}" required>
+                 <h3 class="h5 mb-3">3. Selecteer Periode</h3>
+                <div class="row">
+                    <div class="col-md-6">
+                        <label for="start_date" class="form-label">Startdatum:</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date" value="{{ default_start_date }}" required>
                     </div>
-                    <div>
-                        <label for="end_date" style="display:block; margin-bottom:5px; font-weight:500;">Einddatum:</label>
-                        <input type="date" id="end_date" name="end_date" value="{{ default_end_date }}" required>
+                    <div class="col-md-6">
+                        <label for="end_date" class="form-label">Einddatum:</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date" value="{{ default_end_date }}" required>
                     </div>
                 </div>
             </div>
-
+            
             <div class="form-section">
-                <h3>Selecteer Metrics:</h3>
-                <div class="grid-container">
+                <h3 class="h5 mb-3">4. Selecteer Metrics</h3>
+                <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-2">
                     {% for key, desc in available_metrics.items() %}
-                    <div class="grid-item">
-                        <input type="checkbox" name="selected_metrics" value="{{ key }}" id="metric_{{ key }}" {% if key in default_metrics %}checked{% endif %}>
-                        <label for="metric_{{ key }}">{{ desc }} (<code>{{ key }}</code>)</label>
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="selected_metrics" value="{{ key }}" id="metric_{{ key }}" {% if key in default_metrics %}checked{% endif %}>
+                            <label class="form-check-label" for="metric_{{ key }}">{{ desc }}</label>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
             </div>
 
-            <div class="form-section">
-                <h3>Selecteer Dimensions (excl. 'Datum', die wordt apart behandeld):</h3>
-                <div class="grid-container">
+             <div class="form-section">
+                <h3 class="h5 mb-3">5. Selecteer Dimensions <small class="text-muted fw-normal">(excl. Datum)</small></h3>
+                <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-2">
                     {% for key, desc in available_dimensions.items() %}
-                        {% if key != 'date' %} {# Datum wordt nu standaard meegenomen voor de 'date' kolom in output #}
-                        <div class="grid-item">
-                            <input type="checkbox" name="selected_dimensions" value="{{ key }}" id="dim_{{ key }}" {% if key in default_dimensions and key != 'date' %}checked{% endif %}>
-                            <label for="dim_{{ key }}">{{ desc }} (<code>{{ key }}</code>)</label>
+                        {% if key != 'date' %}
+                        <div class="col">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="selected_dimensions" value="{{ key }}" id="dim_{{ key }}" {% if key in default_dimensions and key != 'date' %}checked{% endif %}>
+                                <label class="form-check-label" for="dim_{{ key }}">{{ desc }}</label>
+                            </div>
                         </div>
                         {% endif %}
                     {% endfor %}
                 </div>
             </div>
-            
-            <button type="submit" class="btn" onclick="return validatePropertySelections()">{{ submit_button_text }}</button>
-            <a href="{{ url_for('my_benchmarks_page') }}" class="btn btn-secondary">Annuleren</a>
-        </form>
+        </div>
     </div>
+    
+    <div class="mt-4">
+        <button type="submit" class="btn btn-primary btn-lg">{{ submit_button_text }}</button>
+        <a href="{{ url_for('my_benchmarks_page') }}" class="btn btn-secondary">Annuleren</a>
+    </div>
+</form>
+{% endblock %}
 
-    <script>
+{% block scripts %}
+{{ super() }}
+<script>
     function filterProperties(inputId, containerId, dataAttribute) {
-        var input = document.getElementById(inputId);
-        var filter = input.value.toLowerCase();
-        var container = document.getElementById(containerId);
-        var items = container.getElementsByClassName('property-item');
-        for (var i = 0; i < items.length; i++) {
-            var itemName = items[i].getAttribute(dataAttribute);
-            if (itemName.indexOf(filter) > -1) {
-                items[i].style.display = "";
+        const filter = document.getElementById(inputId).value.toLowerCase();
+        const container = document.getElementById(containerId);
+        const items = container.querySelectorAll('.property-item');
+        items.forEach(item => {
+            const name = item.getAttribute(dataAttribute);
+            if (name.includes(filter)) {
+                item.style.display = "";
             } else {
-                items[i].style.display = "none";
+                item.style.display = "none";
             }
-        }
+        });
     }
 
     function filterClientAProperties() {
@@ -171,40 +137,46 @@
     function filterBenchmarkProperties() {
         filterProperties('benchmarkPropertySearch', 'benchmarkPropertyListContainer', 'data-name-benchmark');
     }
-    
-    // Initial filter calls
-    if (document.getElementById('clientAPropertySearch')) {
-        filterClientAProperties();
-    }
-    if (document.getElementById('benchmarkPropertySearch')) {
-        filterBenchmarkProperties();
-    }
 
-    function validatePropertySelections() {
+    // Client-side validatie met toasts
+    document.getElementById('benchmarkForm').addEventListener('submit', function(event) {
         const clientASelected = document.querySelector('input[name="client_a_property_id"]:checked');
         if (!clientASelected) {
-            alert("Selecteer a.u.b. één Klant A property.");
-            return false;
+            showToast("Selecteer a.u.b. één Klant A property.", "danger");
+            event.preventDefault();
+            return;
         }
 
         const benchmarkSelected = document.querySelectorAll('input[name="benchmark_property_ids"]:checked');
         if (benchmarkSelected.length === 0) {
-            alert("Selecteer a.u.b. ten minste één Benchmark property.");
-            return false;
+            showToast("Selecteer a.u.b. ten minste één Benchmark property.", "danger");
+            event.preventDefault();
+            return;
         }
 
-        // Zorg ervoor dat Klant A property niet ook als Benchmark property is geselecteerd
-        for (let i = 0; i < benchmarkSelected.length; i++) {
-            if (benchmarkSelected[i].value === clientASelected.value) {
-                alert("Klant A property mag niet tegelijkertijd een Benchmark property zijn. Deselecteer deze uit de Benchmark lijst.");
-                benchmarkSelected[i].parentElement.style.backgroundColor = '#f8d7da'; // Highlight
-                return false;
+        let conflict = false;
+        for (const checkbox of benchmarkSelected) {
+            const item = checkbox.closest('.property-item');
+            if (checkbox.value === clientASelected.value) {
+                showToast("Klant A property mag niet tegelijkertijd een Benchmark property zijn.", "danger");
+                item.classList.add('bg-danger-subtle');
+                conflict = true;
             } else {
-                 benchmarkSelected[i].parentElement.style.backgroundColor = ''; // Reset highlight
+                item.classList.remove('bg-danger-subtle');
             }
         }
-        return true;
-    }
-    </script>
-</body>
-</html>
+        if (conflict) {
+             event.preventDefault();
+        }
+    });
+
+    // AANGEPAST: Toon server-side fouten als toast
+    document.addEventListener('DOMContentLoaded', function() {
+        // De JavaScript wordt nu alleen gerenderd als error_message_form een waarde heeft
+        {% if error_message_form %}
+            const errorMessage = `{{ error_message_form | e }}`;
+            showToast(errorMessage, 'danger');
+        {% endif %}
+    });
+</script>
+{% endblock %}

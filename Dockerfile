@@ -1,16 +1,26 @@
-# Stap 1: Gebruik een officiële Python runtime
+# Dockerfile
+
+# Gebruik een officiële Python runtime als base image
 FROM python:3.11-slim
 
-# Stap 2: Stel een werkdirectory in
-WORKDIR /code
+# Voorkom dat Python .pyc bestanden schrijft en zorg dat output direct zichtbaar is
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
-# Stap 3: Installeer dependencies (dit wordt gecached als requirements.txt niet wijzigt)
+# Stel de werkdirectory in de container in op /app
+WORKDIR /app
+
+# Kopieer en installeer eerst de dependencies.
+# Dit maakt gebruik van Docker's layer caching voor snellere builds.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Stap 4: Kopieer de applicatiecode naar de /code/app directory
-COPY ./app ./app
+# Kopieer de rest van de projectbestanden (de '.' staat voor de project-root)
+# naar de werkdirectory in de container (/app).
+COPY . .
 
-# Stap 5: Stel de command in om de app te draaien
-# Uvicorn wordt gedraaid vanuit /code en kan de 'app' module vinden in /code/app
+# Geef aan dat de container luistert op poort 8000
+EXPOSE 8000
+
+# Het commando om de applicatie te starten
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

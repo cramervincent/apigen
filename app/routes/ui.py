@@ -3,6 +3,7 @@ import json
 from typing import List, Optional
 from datetime import datetime, timedelta
 import urllib.parse
+from urllib.parse import unquote_plus # NIEUW
 
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -96,8 +97,17 @@ async def my_benchmarks_page(request: Request, db: Session = Depends(get_db), me
     if not credentials or not user_email:
         redirect_url = str(request.url_for("home_route").include_query_params(error="not_logged_in"))
         return RedirectResponse(url=redirect_url, status_code=302)
+    
+    # NIEUW: Decodeer het bericht uit de URL query
+    decoded_message = unquote_plus(message) if message else None
+
     benchmarks = get_benchmark_reports_by_user_email(db, user_email)
-    return templates.TemplateResponse("my_benchmarks.html", {"request": request, "benchmarks": benchmarks, "user_email": user_email, "message": message})
+    
+    # AANGEPAST: Geef het gedecodeerde bericht door aan de template
+    return templates.TemplateResponse(
+        "my_benchmarks.html", 
+        {"request": request, "benchmarks": benchmarks, "user_email": user_email, "message": decoded_message}
+    )
 
 @router.get("/benchmarks/new", response_class=HTMLResponse, name="select_benchmark_options_page")
 async def select_benchmark_options_page(request: Request, error_message_form: Optional[str] = Query(None)):
@@ -111,13 +121,18 @@ async def select_benchmark_options_page(request: Request, error_message_form: Op
         return RedirectResponse(url=redirect_url, status_code=302)
 
     user_email = request.session.get("user_email", "Onbekend")
+    
+    # Decodeer eventuele foutmeldingen die via de query worden meegegeven
+    decoded_error_form = unquote_plus(error_message_form) if error_message_form else None
+
     context = {
         "request": request, "properties": ga_properties, "user_email": user_email,
         "available_metrics": settings.AVAILABLE_METRICS, "default_metrics": settings.DEFAULT_METRICS,
         "available_dimensions": settings.AVAILABLE_DIMENSIONS, "default_dimensions": settings.DEFAULT_DIMENSIONS,
         "default_start_date": (datetime.now() - timedelta(days=settings.DEFAULT_START_DAYS_AGO)).strftime("%Y-%m-%d"),
         "default_end_date": (datetime.now() - timedelta(days=settings.DEFAULT_END_DAYS_AGO)).strftime("%Y-%m-%d"),
-        "error_message_fetch": error_message_fetch, "error_message_form": error_message_form,
+        "error_message_fetch": error_message_fetch, 
+        "error_message_form": decoded_error_form, # Gebruik de gedecodeerde melding
         "benchmark_title": "", "client_a_property_id_db": None, "benchmark_property_ids_db": [],
         "form_action_url": request.url_for('generate_and_save_benchmark_route'),
         "submit_button_text": "Genereer & Sla Nieuwe Benchmark Op", "report_uuid": None
@@ -195,6 +210,9 @@ async def edit_benchmark_page(request: Request, report_uuid: str, db: Session = 
         request.session.clear()
         return RedirectResponse(str(request.url_for("home_route").include_query_params(error="auth_failed_properties_edit")), status_code=302)
     
+    # Decodeer eventuele foutmeldingen
+    decoded_error_form = unquote_plus(error_message_form) if error_message_form else None
+    
     try:
         client_a_prop_db = benchmark.client_a_property_id
         benchmark_props_db = json.loads(benchmark.benchmark_property_ids_json) if benchmark.benchmark_property_ids_json else []
@@ -217,7 +235,8 @@ async def edit_benchmark_page(request: Request, report_uuid: str, db: Session = 
         "available_metrics": settings.AVAILABLE_METRICS, "default_metrics": metrics_db,
         "available_dimensions": settings.AVAILABLE_DIMENSIONS, "default_dimensions": dimensions_db,
         "default_start_date": start_date_db, "default_end_date": end_date_db,
-        "error_message_fetch": error_message_fetch, "error_message_form": error_message_form,
+        "error_message_fetch": error_message_fetch, 
+        "error_message_form": decoded_error_form, # Gebruik gedecodeerde melding
         "benchmark_title": benchmark.title, "client_a_property_id_db": client_a_prop_db, 
         "benchmark_property_ids_db": benchmark_props_db, "report_uuid": report_uuid,
         "form_action_url": request.url_for('update_benchmark_endpoint', report_uuid=report_uuid),
@@ -288,7 +307,6 @@ async def update_benchmark_endpoint(
 
 @router.post("/benchmarks/delete/{report_uuid}", name="delete_benchmark_endpoint")
 async def delete_benchmark_endpoint(request: Request, report_uuid: str, db: Session = Depends(get_db)):
-    # ... (Deze functie blijft ongewijzigd en zou moeten werken)
     credentials = get_google_credentials_from_session(request)
     user_email = request.session.get("user_email")
     if not credentials or not user_email:
