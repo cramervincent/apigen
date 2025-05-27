@@ -4,7 +4,7 @@
 # ====================================================================================
 
 # --- Variables ---
-PULL_BRANCH := main
+PULL_BRANCH := master
 APP_SERVICE_NAME := apigen
 # NIEUW: Expliciet pad naar de Alembic configuratie binnen de container
 ALEMBIC_CONFIG_PATH := /app/alembic.ini
