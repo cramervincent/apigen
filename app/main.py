@@ -2,9 +2,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.middleware.trusted_host import TrustedHostMiddleware # Voorbeeld, maar ProxyHeaders is beter
-from fastapi.middleware.cors import CORSMiddleware # Voorbeeld
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware # NIEUW
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware # Deze is WEL nodig
 
 from .database import create_db_and_tables
 from .config import settings
@@ -43,8 +41,6 @@ app = FastAPI(
 )
 
 # Middleware
-# NIEUW: Voeg ProxyHeadersMiddleware toe. Dit zorgt ervoor dat FastAPI de
-# X-Forwarded-* headers van Nginx leest en correcte https:// links genereert.
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.add_middleware(
