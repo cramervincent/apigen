@@ -46,13 +46,15 @@ def _fetch_ga_data_for_property(
             row_dict = {"dimensions": {}, "metrics": {}}
             for i, dim_value_obj in enumerate(api_row.dimension_values):
                 dim_name_from_header = dimension_header_names[i]
-                # Converteer GA datumformaat YYYYMMDD naar YYYY-MM-DD indien 'date' dimensie
+                # Converteer GA datumformaat YYYYMMDD naar een datetime-object
                 if dim_name_from_header == "date":
                     try:
+                        # Behoud het als een datetime object
                         dt_obj = datetime.strptime(dim_value_obj.value, "%Y%m%d")
-                        row_dict["dimensions"][dim_name_from_header] = dt_obj.strftime("%Y-%m-%d")
+                        row_dict["dimensions"][dim_name_from_header] = dt_obj
                     except ValueError:
-                        row_dict["dimensions"][dim_name_from_header] = dim_value_obj.value # Fallback
+                        # Fallback als de conversie mislukt
+                        row_dict["dimensions"][dim_name_from_header] = dim_value_obj.value 
                 else:
                     row_dict["dimensions"][dim_name_from_header] = dim_value_obj.value
             
@@ -108,7 +110,8 @@ async def generate_benchmark_data_from_google(
     
     if client_a_raw_rows:
         for row_dict in client_a_raw_rows:
-            key_dim_values_list = [row_dict["dimensions"].get("date", "N/A")]
+            # De 'date' key in row_dict["dimensions"] is nu een datetime object
+            key_dim_values_list = [row_dict["dimensions"].get("date")] # Kan None zijn als 'date' niet aanwezig is
             for dim_name in selected_dimension_api_names: 
                 key_dim_values_list.append(row_dict["dimensions"].get(dim_name, "(not set)"))
             
@@ -136,7 +139,7 @@ async def generate_benchmark_data_from_google(
             
             successful_benchmark_prop_count += 1
             for row_dict in bench_raw_rows:
-                key_dim_values_list = [row_dict["dimensions"].get("date", "N/A")]
+                key_dim_values_list = [row_dict["dimensions"].get("date")]
                 for dim_name in selected_dimension_api_names:
                     key_dim_values_list.append(row_dict["dimensions"].get(dim_name, "(not set)"))
                 key_tuple = tuple(key_dim_values_list)
@@ -150,14 +153,24 @@ async def generate_benchmark_data_from_google(
         for key_tuple, metrics_sums_counts in aggregated_benchmark_metrics.items():
             averaged_benchmark_data[key_tuple] = {}
             for m_api, data in metrics_sums_counts.items():
-                averaged_benchmark_data[key_tuple][m_api] = data["sum"] / successful_benchmark_prop_count
-    
+                # Speciale behandeling voor 'averageSessionDuration' en 'engagementRate'
+                if m_api in ["averageSessionDuration", "engagementRate"]:
+                     # Voor deze metrics willen we het gemiddelde van de gemiddelden nemen,
+                     # wat neerkomt op de som delen door het aantal properties dat data heeft geleverd.
+                    averaged_benchmark_data[key_tuple][m_api] = data["sum"] / successful_benchmark_prop_count
+                else:
+                    # Voor andere metrics, neem de som (of pas logica aan indien nodig)
+                    # Hier gaan we uit van een gemiddelde over de properties.
+                    averaged_benchmark_data[key_tuple][m_api] = data["sum"] / successful_benchmark_prop_count
+
+
     # --- Samenstellen van de uiteindelijke "brede" output ---
     final_wide_output: List[Dict[str, Any]] = []
     
     # Verwerk Klant A data
     for key_tuple, metrics_values_dict in processed_client_a_data.items():
         output_row = {"group": client_a_property_id} 
+        # key_tuple[0] is het datetime object voor de datum
         output_row["date"] = key_tuple[0] 
         
         for i, dim_name in enumerate(selected_dimension_api_names): 
@@ -165,7 +178,7 @@ async def generate_benchmark_data_from_google(
             
         for metric_name, value in metrics_values_dict.items():
             if metric_name in selected_metric_api_names:
-                output_row[metric_name] = round(value, 2)
+                output_row[metric_name] = round(value, 2) if isinstance(value, (int, float)) else value
         final_wide_output.append(output_row)
 
     # Verwerk Benchmark data
@@ -178,13 +191,13 @@ async def generate_benchmark_data_from_google(
             
         for metric_name, value in metrics_values_dict.items():
             if metric_name in selected_metric_api_names:
-                output_row[metric_name] = round(value, 2)
+                output_row[metric_name] = round(value, 2) if isinstance(value, (int, float)) else value
         final_wide_output.append(output_row)
 
     if not final_wide_output and errors_dict:
         error_summary = "; ".join([f"{prop}: {err}" for prop, err in errors_dict.items()])
         raise ValueError(f"Kon geen benchmark data genereren. Fouten: {error_summary}")
     elif not final_wide_output and not client_a_raw_rows and successful_benchmark_prop_count == 0 :
-        pass 
+        pass # Geen data en geen errors, retourneer lege lijst
 
     return final_wide_output

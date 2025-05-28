@@ -1,9 +1,17 @@
 # app/crud.py
 import json
+from datetime import datetime # <-- IMPORT TOEGEVOEGD
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import desc 
 from .database import BenchmarkReportDB
+
+# HULPFUNCTIE VOOR JSON SERIALISATIE TOEGEVOEGD
+def json_serializer(obj: Any) -> str:
+    """JSON serializer voor objecten die niet standaard serialiseerbaar zijn, zoals datetime."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()  # Converteer datetime naar ISO 8601 string
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 def create_benchmark_report(
     db: Session, 
@@ -12,7 +20,7 @@ def create_benchmark_report(
     benchmark_property_ids: Optional[List[str]], # NIEUW
     metrics_used: List[str],
     dimensions_used: List[str],
-    benchmark_results_flat_json: List[Dict[str, Any]], # Verwacht nu de platte JSON structuur
+    benchmark_results_flat_json: List[Dict[str, Any]], # Verwacht nu de platte JSON structuur (met datetime objecten)
     user_email: Optional[str]
 ) -> BenchmarkReportDB:
     
@@ -33,7 +41,8 @@ def create_benchmark_report(
         property_ids_used=legacy_property_ids_used, # Voor eventuele legacy/logging
         metrics_used=json.dumps(metrics_used),
         dimensions_used=json.dumps(dimensions_used),
-        benchmark_data_json=json.dumps(benchmark_results_flat_json), # Sla de platte structuur op
+        # GEBRUIK DE SERIALIZER BIJ HET OPSLAAN VAN benchmark_data_json
+        benchmark_data_json=json.dumps(benchmark_results_flat_json, default=json_serializer), 
         generated_by_email=user_email
     )
     db.add(db_report)
@@ -56,7 +65,7 @@ def update_benchmark_report(
     benchmark_property_ids: Optional[List[str]] = None, # NIEUW
     metrics_used: Optional[List[str]] = None,
     dimensions_used: Optional[List[str]] = None,
-    benchmark_results_flat_json: Optional[List[Dict[str, Any]]] = None # Verwacht platte structuur
+    benchmark_results_flat_json: Optional[List[Dict[str, Any]]] = None # Verwacht platte structuur (met datetime objecten)
 ) -> Optional[BenchmarkReportDB]:
     db_report = db.query(BenchmarkReportDB).filter(
         BenchmarkReportDB.report_uuid == report_uuid,
@@ -70,9 +79,9 @@ def update_benchmark_report(
         db_report.title = title
     
     # Update nieuwe property velden
-    if client_a_property_id is not None: # Kan ook leeg zijn als het wordt verwijderd
+    if client_a_property_id is not None: 
         db_report.client_a_property_id = client_a_property_id
-    if benchmark_property_ids is not None: # Kan ook een lege lijst zijn
+    if benchmark_property_ids is not None: 
         db_report.benchmark_property_ids_json = json.dumps(benchmark_property_ids)
 
     # Update legacy property_ids_used (optioneel, voor consistentie)
@@ -91,7 +100,8 @@ def update_benchmark_report(
     if dimensions_used is not None:
         db_report.dimensions_used = json.dumps(dimensions_used)
     if benchmark_results_flat_json is not None:
-        db_report.benchmark_data_json = json.dumps(benchmark_results_flat_json)
+        # GEBRUIK DE SERIALIZER OOK HIER
+        db_report.benchmark_data_json = json.dumps(benchmark_results_flat_json, default=json_serializer)
     
     db.commit()
     db.refresh(db_report)
