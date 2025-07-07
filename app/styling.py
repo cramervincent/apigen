@@ -1,11 +1,7 @@
-# app/styling.py
 import sass
 import os
 
 def compile_scss():
-    """
-    Compileert het hoofd SCSS-bestand naar een CSS-bestand.
-    """
     scss_dir = "app/static/scss"
     css_dir = "app/static/css"
     main_scss_file = os.path.join(scss_dir, "main.scss")
@@ -17,15 +13,17 @@ def compile_scss():
 
     print(f"Compileren van {main_scss_file} naar {output_css_file}...")
     try:
-        # Zorg ervoor dat de doelmap bestaat
         os.makedirs(css_dir, exist_ok=True)
-        
+
         css_content = sass.compile(
             filename=main_scss_file,
-            output_style='compressed' # 'expanded' voor leesbare output, 'compressed' voor productie
+            output_style='compressed'
         )
         with open(output_css_file, "w") as f:
             f.write(css_content)
         print("SCSS compilatie succesvol.")
     except Exception as e:
         print(f"FOUT bij compileren van SCSS: {e}")
+
+if __name__ == "__main__":
+    compile_scss()

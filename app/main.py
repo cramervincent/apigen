@@ -1,23 +1,19 @@
-# app/main.py
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware # NIEUW & CORRECT
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .database import create_db_and_tables
 from .config import settings
 from .routes import ui, api
 from .styling import compile_scss
 
-# Imports voor Alembic
 from alembic.config import Config
 from alembic import command
 import traceback
 
-# Compileer SCSS naar CSS bij opstarten
 compile_scss()
 
-# Database migraties uitvoeren met duidelijke logging
 print("="*50)
 print("CONTROLEREN EN UITVOEREN DATABASE MIGRATIES")
 print("="*50)
@@ -40,7 +36,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Middleware
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.add_middleware(
@@ -48,10 +43,8 @@ app.add_middleware(
     secret_key=settings.SESSION_SECRET_KEY
 )
 
-# Mount static files directory
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# Routers
 app.include_router(ui.router, tags=["User Interface"])
 app.include_router(api.router, tags=["API"])
 
@@ -59,7 +52,6 @@ app.include_router(api.router, tags=["API"])
 async def health_check():
     return {"status": "ok"}
 
-# Voor lokaal draaien
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
