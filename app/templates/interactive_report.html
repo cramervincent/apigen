@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ report_title }} | Benchmark Rapport</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 450px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 450px;
+            }
+        }
+        .kpi-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-left: 5px solid;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1);
+        }
+        .time-agg-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            transition: background-color 0.2s, color 0.2s;
+            background-color: #e5e7eb;
+            color: #4b5563;
+            border: 1px solid #d1d5db;
+        }
+        .time-agg-btn.active {
+            background-color: #58508d;
+            color: white;
+            border-color: #58508d;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <main class="container mx-auto p-4 md:p-8">
+
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-black" style="color: #003f5c;">Benchmark Prestaties</h1>
+            <h2 class="text-2xl md:text-3xl font-bold" style="color: #58508d;">{{ client_name }}</h2>
+            <p class="text-lg text-gray-600 mt-2">Analyseperiode: {{ period }}</p>
+        </header>
+
+        <section id="kpis" class="mb-16">
+            <div class="text-center mb-8">
+                <h3 class="text-3xl font-bold" style="color: #003f5c;">Kerncijfers in Vogelvlucht</h3>
+                <p class="text-gray-600 max-w-2xl mx-auto mt-2">Een directe vergelijking van de belangrijkste prestatie-indicatoren.</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {% set colors = ['#003f5c', '#58508d', '#bc5090', '#ff6361', '#ffa600'] %}
+                {% for metric, values in kpis.items() %}
+                <div class="kpi-card" style="border-color: {{ colors[loop.index0 % colors|length] }};">
+                    <p class="text-gray-500 font-semibold">{{ available_metrics_map[metric] }}</p>
+                    <p class="text-4xl font-black my-2" style="color: {{ colors[loop.index0 % colors|length] }};">
+                        {{ "{:,.0f}".format(values.client_value) if "rate" not in metric and "percentage" not in metric else "{:,.2f}%".format(values.client_value * 100) }}
+                    </p>
+                    <p class="text-sm font-semibold">
+                        <span class="{{ 'text-green-500' if values.diff_percentage >= 0 else 'text-red-500' }}">
+                            {{ "{:+.1f}%".format(values.diff_percentage) }}
+                        </span> 
+                        vs. Benchmark ({{ "{:,.0f}".format(values.bench_value) if "rate" not in metric and "percentage" not in metric else "{:,.2f}%".format(values.bench_value * 100) }})
+                    </p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% for metric, data in json_loads(trend_data_json).items() %}
+        <section class="mb-16 bg-white rounded-lg shadow-lg p-6 md:p-8">
+             <div class="flex justify-between items-center mb-8 flex-col sm:flex-row text-center sm:text-left">
+                <div>
+                    <h3 class="text-3xl font-bold" style="color: #003f5c;">{{ available_metrics_map[metric] }}: Trend over Tijd</h3>
+                    <p class="text-gray-600 max-w-2xl mt-2">De ontwikkeling van {{ available_metrics_map[metric]|lower }} over de geselecteerde periode.</p>
+                </div>
+                <div class="flex space-x-2 mt-4 sm:mt-0" id="btn-group-{{ metric }}">
+                    <button class="time-agg-btn active" onclick="updateTrendChart('{{ metric }}', 'day')">Dag</button>
+                    <button class="time-agg-btn" onclick="updateTrendChart('{{ metric }}', 'week')">Week</button>
+                    <button class="time-agg-btn" onclick="updateTrendChart('{{ metric }}', 'month')">Maand</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="trendChart_{{ metric }}"></canvas>
+            </div>
+        </section>
+        {% endfor %}
+
+        {% for key, data in json_loads(dimension_data_json).items() %}
+        <section class="mb-16 bg-white rounded-lg shadow-lg p-6 md:p-8">
+             <div class="text-center mb-8">
+                <h3 class="text-3xl font-bold" style="color: #003f5c;">{{ data.metric_title }} per {{ data.dimension_title }}</h3>
+                 <p class="text-gray-600 max-w-2xl mx-auto mt-2">Vergelijking van {{ data.metric_title|lower }} per {{ data.dimension_title|lower }}.</p>
+            </div>
+            <div class="chart-container">
+                <canvas id="dimChart_{{ key }}"></canvas>
+            </div>
+        </section>
+        {% endfor %}
+
+    </main>
+
+    <footer class="text-center p-4 bg-gray-800 text-white text-sm">
+        <p>Infographic gegenereerd op {{ "{:%d %B %Y}".format(request.state.now) if request.state.now else "" }}. | Benchmark Analyse</p>
+    </footer>
+
+    <script>
+        const colorPalette = {
+            client: '#58508d',
+            benchmark: '#ff6361'
+        };
+
+        // DE FIX ZIT HIER: Gebruik JSON.parse in plaats van de niet-bestaande 'json_loads'
+        const trendData = JSON.parse('{{ trend_data_json | safe }}');
+        const dimensionData = JSON.parse('{{ dimension_data_json | safe }}');
+        const clientName = '{{ client_name }}';
+        
+        const chartInstances = {};
+
+        function wrapLabel(label) {
+            const maxLength = 16;
+            if (typeof label !== 'string' || label.length <= maxLength) return label;
+            const words = label.split(' ');
+            let lines = [], currentLine = '';
+            words.forEach(word => {
+                if ((currentLine + ' ' + word).length > maxLength) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine += (currentLine === '' ? '' : ' ') + word;
+                }
+            });
+            lines.push(currentLine);
+            return lines;
+        }
+
+        const tooltipTitleCallback = (tooltipItems) => {
+            const item = tooltipItems[0];
+            let label = item.chart.data.labels[item.dataIndex];
+            return Array.isArray(label) ? label.join(' ') : label;
+        };
+
+        function updateTrendChart(metric, period) {
+            const chart = chartInstances['trendChart_' + metric];
+            if (!chart) return;
+
+            const newData = trendData[metric][period];
+            chart.data.labels = newData.labels;
+            chart.data.datasets[0].data = newData.client_data;
+            chart.data.datasets[1].data = newData.benchmark_data;
+            
+            chart.options.scales.x.time.unit = period;
+
+            chart.update();
+
+            const btnGroup = document.getElementById('btn-group-' + metric);
+            btnGroup.querySelectorAll('.time-agg-btn').forEach(btn => btn.classList.remove('active'));
+            btnGroup.querySelector(`[onclick*="'${period}'"]`).classList.add('active');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            for (const metric in trendData) {
+                const chartId = 'trendChart_' + metric;
+                const chartElement = document.getElementById(chartId);
+                if (chartElement) {
+                    const initialData = trendData[metric]['day'];
+                    const chart = new Chart(chartElement, {
+                        type: 'line',
+                        data: {
+                            labels: initialData.labels,
+                            datasets: [
+                                { label: clientName, data: initialData.client_data, borderColor: colorPalette.client, backgroundColor: colorPalette.client + '33', fill: true },
+                                { label: 'Benchmark (Avg)', data: initialData.benchmark_data, borderColor: colorPalette.benchmark, backgroundColor: colorPalette.benchmark + '33', fill: true }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
+                            scales: {
+                                y: { beginAtZero: true, grid: { color: '#e5e7eb' } },
+                                x: { type: 'time', time: { unit: 'day', tooltipFormat: 'dd-MM-yyyy' }, grid: { display: false } }
+                            },
+                            elements: { line: { tension: 0.4 } }
+                        }
+                    });
+                    chartInstances[chartId] = chart;
+                }
+            }
+            
+            for (const key in dimensionData) {
+                const chartId = 'dimChart_' + key;
+                const chartElement = document.getElementById(chartId);
+                const data = dimensionData[key];
+                if (chartElement) {
+                    const chart = new Chart(chartElement, {
+                        type: 'bar',
+                        data: {
+                            labels: data.labels.map(wrapLabel),
+                            datasets: [
+                                { label: clientName, data: data.client_data, backgroundColor: colorPalette.client },
+                                { label: 'Benchmark (Avg)', data: data.benchmark_data, backgroundColor: colorPalette.benchmark }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { position: 'top' }, tooltip: { callbacks: { title: tooltipTitleCallback } } },
+                            scales: { y: { beginAtZero: true, grid: { color: '#e5e7eb' } }, x: { grid: { display: false } } }
+                        }
+                    });
+                    chartInstances[chartId] = chart;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

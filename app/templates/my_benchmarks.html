@@ -27,13 +27,17 @@
                         {% for benchmark in benchmarks %}
                         <tr>
                             <td>
-                                <a href="{{ url_for('get_saved_report_api', report_uuid=benchmark.report_uuid) }}" target="_blank" title="Bekijk JSON data">
-                                    {{ benchmark.title }}
-                                </a>
+                                {{ benchmark.title }}
                             </td>
                             <td>{{ benchmark.created_at.strftime('%d-%m-%Y %H:%M') if benchmark.created_at else 'N/A' }}</td>
                             <td>{{ benchmark.updated_at.strftime('%d-%m-%Y %H:%M') if benchmark.updated_at else 'N/A' }}</td>
                             <td class="text-end">
+                                <a href="{{ url_for('interactive_report_page', report_uuid=benchmark.report_uuid) }}" class="btn btn-sm btn-outline-success me-1" title="Bekijk Interactief Rapport" target="_blank">
+                                    <i class="bi bi-bar-chart-line"></i>
+                                </a>
+                                <a href="{{ url_for('get_saved_report_api', report_uuid=benchmark.report_uuid) }}" class="btn btn-sm btn-outline-info me-1" title="Bekijk JSON Data" target="_blank">
+                                    <i class="bi bi-filetype-json"></i>
+                                </a>
                                 <a href="{{ url_for('edit_benchmark_page', report_uuid=benchmark.report_uuid) }}" class="btn btn-sm btn-outline-secondary me-1" title="Bewerken">
                                     <i class="bi bi-pencil"></i>
                                 </a>
@@ -62,9 +66,8 @@
 {{ super() }}
 {% if message %}
 <script>
-    // Wacht tot de DOM volledig geladen is om de toast te tonen
     document.addEventListener('DOMContentLoaded', function() {
-        const messageText = `{{ message | e }}`; // |e filter voor security (escape)
+        const messageText = `{{ message | e }}`;
         const messageType = messageText.toLowerCase().includes('succesvol') ? 'success' : 'danger';
         showToast(messageText, messageType);
     });

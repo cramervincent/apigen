@@ -1,15 +1,15 @@
-# app/routes/ui.py
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import urllib.parse
-from urllib.parse import unquote_plus # NIEUW
+from urllib.parse import unquote_plus 
 
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.datastructures import URL
+import pandas as pd
 
 from ..dependencies import get_db
 from ..auth import get_google_credentials_from_session, get_google_flow, store_credentials_in_session
@@ -98,12 +98,10 @@ async def my_benchmarks_page(request: Request, db: Session = Depends(get_db), me
         redirect_url = str(request.url_for("home_route").include_query_params(error="not_logged_in"))
         return RedirectResponse(url=redirect_url, status_code=302)
     
-    # NIEUW: Decodeer het bericht uit de URL query
     decoded_message = unquote_plus(message) if message else None
 
     benchmarks = get_benchmark_reports_by_user_email(db, user_email)
     
-    # AANGEPAST: Geef het gedecodeerde bericht door aan de template
     return templates.TemplateResponse(
         "my_benchmarks.html", 
         {"request": request, "benchmarks": benchmarks, "user_email": user_email, "message": decoded_message}
@@ -122,7 +120,6 @@ async def select_benchmark_options_page(request: Request, error_message_form: Op
 
     user_email = request.session.get("user_email", "Onbekend")
     
-    # Decodeer eventuele foutmeldingen die via de query worden meegegeven
     decoded_error_form = unquote_plus(error_message_form) if error_message_form else None
 
     context = {
@@ -132,7 +129,7 @@ async def select_benchmark_options_page(request: Request, error_message_form: Op
         "default_start_date": (datetime.now() - timedelta(days=settings.DEFAULT_START_DAYS_AGO)).strftime("%Y-%m-%d"),
         "default_end_date": (datetime.now() - timedelta(days=settings.DEFAULT_END_DAYS_AGO)).strftime("%Y-%m-%d"),
         "error_message_fetch": error_message_fetch, 
-        "error_message_form": decoded_error_form, # Gebruik de gedecodeerde melding
+        "error_message_form": decoded_error_form,
         "benchmark_title": "", "client_a_property_id_db": None, "benchmark_property_ids_db": [],
         "form_action_url": request.url_for('generate_and_save_benchmark_route'),
         "submit_button_text": "Genereer & Sla Nieuwe Benchmark Op", "report_uuid": None
@@ -142,7 +139,7 @@ async def select_benchmark_options_page(request: Request, error_message_form: Op
 @router.post("/benchmarks/new", name="generate_and_save_benchmark_route")
 async def generate_and_save_benchmark_endpoint(
     request: Request, benchmark_title: str = Form(...),
-    client_a_property_id: Optional[str] = Form(None), # Maak optioneel voor validatie
+    client_a_property_id: Optional[str] = Form(None), 
     benchmark_property_ids: Optional[List[str]] = Form(None),
     selected_metrics: Optional[List[str]] = Form(None),
     selected_dimensions: Optional[List[str]] = Form(None),
@@ -156,7 +153,6 @@ async def generate_and_save_benchmark_endpoint(
 
     actual_selected_dimensions = selected_dimensions if selected_dimensions else []
     
-    # Server-side validatie
     error_form = None
     if not benchmark_title.strip(): error_form = "Benchmark titel mag niet leeg zijn."
     elif not client_a_property_id: error_form = "Selecteer a.u.b. een Klant A property."
@@ -210,7 +206,6 @@ async def edit_benchmark_page(request: Request, report_uuid: str, db: Session = 
         request.session.clear()
         return RedirectResponse(str(request.url_for("home_route").include_query_params(error="auth_failed_properties_edit")), status_code=302)
     
-    # Decodeer eventuele foutmeldingen
     decoded_error_form = unquote_plus(error_message_form) if error_message_form else None
     
     try:
@@ -236,7 +231,7 @@ async def edit_benchmark_page(request: Request, report_uuid: str, db: Session = 
         "available_dimensions": settings.AVAILABLE_DIMENSIONS, "default_dimensions": dimensions_db,
         "default_start_date": start_date_db, "default_end_date": end_date_db,
         "error_message_fetch": error_message_fetch, 
-        "error_message_form": decoded_error_form, # Gebruik gedecodeerde melding
+        "error_message_form": decoded_error_form,
         "benchmark_title": benchmark.title, "client_a_property_id_db": client_a_prop_db, 
         "benchmark_property_ids_db": benchmark_props_db, "report_uuid": report_uuid,
         "form_action_url": request.url_for('update_benchmark_endpoint', report_uuid=report_uuid),
@@ -307,22 +302,153 @@ async def update_benchmark_endpoint(
 
 @router.post("/benchmarks/delete/{report_uuid}", name="delete_benchmark_endpoint")
 async def delete_benchmark_endpoint(request: Request, report_uuid: str, db: Session = Depends(get_db)):
-    credentials = get_google_credentials_from_session(request)
     user_email = request.session.get("user_email")
-    if not credentials or not user_email:
+    # Check ingelogde status (dit kan aan het begin)
+    if not user_email or not get_google_credentials_from_session(request):
         return RedirectResponse(str(request.url_for("home_route").include_query_params(error="not_logged_in")), status_code=302)
 
-    benchmark_to_delete = get_benchmark_report_by_uuid(db, report_uuid)
-    if not benchmark_to_delete or benchmark_to_delete.generated_by_email != user_email:
-        redirect_url = str(request.url_for("my_benchmarks_page").include_query_params(message=urllib.parse.quote_plus("Kon benchmark niet verwijderen.")))
-        return RedirectResponse(url=redirect_url, status_code=303)
-    
-    title_deleted = benchmark_to_delete.title
-    deleted = delete_benchmark_report(db, report_uuid, user_email)
+    try:
+        # 1. Haal de benchmark op die verwijderd moet worden
+        benchmark_to_delete = get_benchmark_report_by_uuid(db, report_uuid)
 
-    if deleted:
-        redirect_url = str(request.url_for("my_benchmarks_page").include_query_params(message=urllib.parse.quote_plus(f"Benchmark '{title_deleted}' succesvol verwijderd!")))
+        # 2. Controleer of de benchmark bestaat en of de gebruiker de eigenaar is
+        if not benchmark_to_delete or benchmark_to_delete.generated_by_email != user_email:
+            error_message = urllib.parse.quote_plus("Verwijderen mislukt: Benchmark niet gevonden of geen eigenaar.")
+            redirect_url = str(request.url_for("my_benchmarks_page")) + f"?message={error_message}"
+            return RedirectResponse(url=redirect_url, status_code=303)
+        
+        title_deleted = benchmark_to_delete.title
+        
+        # 3. Voer de verwijder-actie uit
+        deleted = delete_benchmark_report(db, report_uuid, user_email)
+
+        # 4. Bepaal de boodschap voor de gebruiker
+        if deleted:
+            message = urllib.parse.quote_plus(f"Benchmark '{title_deleted}' succesvol verwijderd!")
+        else:
+            # Dit gebeurt als de delete-functie False teruggeeft zonder een error
+            message = urllib.parse.quote_plus(f"Fout bij verwijderen van benchmark '{title_deleted}'.")
+
+        redirect_url = str(request.url_for("my_benchmarks_page")) + f"?message={message}"
         return RedirectResponse(url=redirect_url, status_code=303)
-    else:
-        redirect_url = str(request.url_for("my_benchmarks_page").include_query_params(message=urllib.parse.quote_plus("Fout bij verwijderen benchmark.")))
+
+    except Exception as e:
+        # 5. VANG ALLE ANDERE FOUTEN OP (DE FIX VOOR DE 500 ERROR)
+        print(f"--- FATAL ERROR during benchmark deletion: {e} ---") # Log de fout nu wel!
+        
+        error_message = urllib.parse.quote_plus(f"Interne serverfout bij verwijderen. Details: {e}")
+        redirect_url = str(request.url_for("my_benchmarks_page")) + f"?message={error_message}"
         return RedirectResponse(url=redirect_url, status_code=303)
+
+
+# --- INTERACTIVE REPORT ROUTE WITH TIME AGGREGATION ---
+@router.get("/benchmarks/report/{report_uuid}", response_class=HTMLResponse, name="interactive_report_page")
+async def interactive_report_page(request: Request, report_uuid: str, db: Session = Depends(get_db)):
+    user_email = request.session.get("user_email")
+    if not user_email:
+        return RedirectResponse(str(request.url_for("home_route").include_query_params(error="not_logged_in")), status_code=302)
+
+    report = get_benchmark_report_by_uuid(db, report_uuid)
+    if not report or report.generated_by_email != user_email:
+        raise HTTPException(status_code=404, detail="Benchmark niet gevonden of geen eigenaar.")
+
+    try:
+        data = json.loads(report.benchmark_data_json)
+        if not data:
+            return templates.TemplateResponse("error.html", {"request": request, "message": "Dit rapport bevat geen data."}, status_code=404)
+        
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date'])
+
+        client_id = report.client_a_property_id
+        benchmark_ids = json.loads(report.benchmark_property_ids_json)
+        num_benchmark_properties = len(benchmark_ids) if benchmark_ids else 1
+
+        client_df = df[df['group'] == client_id].copy()
+        benchmark_df = df[df['group'] == 'Benchmark'].copy()
+        
+        metrics = json.loads(report.metrics_used)
+        
+        # --- Bereken KPIs (met gemiddelde voor benchmark) ---
+        kpis = {}
+        for metric in metrics:
+            client_total = client_df[metric].sum()
+            bench_total_sum = benchmark_df[metric].sum()
+            bench_average = bench_total_sum / num_benchmark_properties
+            
+            diff = ((client_total - bench_average) / bench_average * 100) if bench_average > 0 else 0
+            
+            kpis[metric] = {
+                "client_value": client_total,
+                "bench_value": bench_average,
+                "diff_percentage": round(diff, 1)
+            }
+
+        # --- Data voor Trend grafieken (Dag, Week, Maand) ---
+        trend_data = {}
+        if 'date' in df.columns:
+            # Set date as index for resampling
+            client_df_resample = client_df.set_index('date')
+            benchmark_df_resample = benchmark_df.set_index('date')
+
+            for metric in metrics:
+                trend_data[metric] = {}
+                for period, period_name in [('D', 'day'), ('W', 'week'), ('M', 'month')]:
+                    client_resampled = client_df_resample[metric].resample(period).sum().reset_index()
+                    benchmark_resampled_sum = benchmark_df_resample[metric].resample(period).sum().reset_index()
+                    
+                    benchmark_resampled_avg = benchmark_resampled_sum.copy()
+                    benchmark_resampled_avg[metric] = benchmark_resampled_avg[metric] / num_benchmark_properties
+                    
+                    trend_data[metric][period_name] = {
+                        "labels": client_resampled['date'].dt.strftime('%Y-%m-%d').tolist(),
+                        "client_data": client_resampled[metric].tolist(),
+                        "benchmark_data": benchmark_resampled_avg[metric].tolist()
+                    }
+
+        # --- Data voor Dimensie grafieken (met gemiddelde voor benchmark) ---
+        dimension_data = {}
+        dimensions_in_report = [d for d in json.loads(report.dimensions_used) if d != 'date']
+        for dim in dimensions_in_report:
+            if dim in df.columns:
+                for metric in metrics:
+                    client_dim = client_df.groupby(dim)[metric].sum().reset_index()
+                    bench_dim_sum = benchmark_df.groupby(dim)[metric].sum().reset_index()
+                    
+                    merged_df = pd.merge(client_dim, bench_dim_sum, on=dim, how='outer', suffixes=('_client', '_bench_sum')).fillna(0)
+                    
+                    merged_df[metric + '_bench_avg'] = merged_df[metric + '_bench_sum'] / num_benchmark_properties
+
+                    chart_key = f"{dim}_{metric}"
+                    dimension_data[chart_key] = {
+                        "metric_title": settings.AVAILABLE_METRICS.get(metric, metric),
+                        "dimension_title": settings.AVAILABLE_DIMENSIONS.get(dim, dim),
+                        "labels": merged_df[dim].tolist(),
+                        "client_data": merged_df[metric + '_client'].tolist(),
+                        "benchmark_data": merged_df[metric + '_bench_avg'].tolist()
+                    }
+
+        # --- Periode en Client naam bepalen ---
+        start_date = df['date'].min().strftime('%d %b %Y')
+        end_date = df['date'].max().strftime('%d %b %Y')
+        
+        ga_properties, _ = await _get_ga_properties(get_google_credentials_from_session(request))
+        client_name = next((prop['name'] for prop in ga_properties if prop['id'] == client_id), client_id)
+
+        # --- Context voor de template ---
+        context = {
+            "request": request,
+            "report_title": report.title,
+            "client_name": client_name.split(' (Account:')[0],
+            "period": f"{start_date} - {end_date}",
+            "kpis": kpis,
+            "available_metrics_map": settings.AVAILABLE_METRICS,
+            "trend_data_json": json.dumps(trend_data),
+            "dimension_data_json": json.dumps(dimension_data),
+            "json_loads": json.loads
+        }
+        return templates.TemplateResponse("interactive_report.html", context)
+        
+    except Exception as e:
+        print(f"Error generating interactive report: {e}")
+        return templates.TemplateResponse("error.html", {"request": request, "message": f"Fout bij genereren van rapport: {e}"}, status_code=500)
